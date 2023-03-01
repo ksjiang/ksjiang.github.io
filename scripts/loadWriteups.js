@@ -12,7 +12,8 @@ async function loadWriteups(dirPath) {
         var newDiv = document.createElement("div");
         newDiv.className = "writeup";
         newDiv.id = c.split('.').slice(0, -1).join('.');
-        newDiv.innerHTML = await readFile("./writeups/" + c);
+//        newDiv.innerHTML = await readFile("./writeups/" + c);
+		newDiv.innerHTML = await readFile("https://raw.githubusercontent.com/ksjiang/ksjiang.github.io/master/writeups/" + c);
         contentDiv.appendChild(newDiv);
     }
 
