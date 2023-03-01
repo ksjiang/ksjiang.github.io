@@ -1,0 +1,138 @@
+
+<!--Add date: 09/06/2022-->
+
+<h1>Solving Systems of Linear Congruences</h1>
+
+<h2>Process Tutorial</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Overview</h4>
+
+<p>The <b>Chinese Remainder Theorem</b> (CRT) says that, given the remainders after division by one or more integers that are pairwise co-prime, a unique solution exists modulo the product of those integers. First, we will prove this statement, then describe some ways to calculate the solution.</p>
+
+<h4>Proof of CRT</h4>
+
+<h5>Existence</h5>
+
+<p>Claim: Given a series of linear congruences where the moduli are pairwise co-prime, there <i>exists</i> a number <code>x</code> that satisfies it.</p>
+
+<p>Proof: The map from residues modulo the product of all the moduli <code>n_i</code>, call it <code>N</code>, to sequences of residues modulo each individual <code>n_i</code> is injective by the uniqueness proof below. Both domain and co-domain are of the same size (i.e., <code>N</code>), so the map must also be surjective.
+
+<h5>Uniqueness</h5>
+
+<p>Claim: If a number satisfies a series of linear congruences where the moduli are pairwise co-prime, then it is <i>unique</i> modulo the product of the individual moduli.</p>
+
+<p>Proof: Consider <code>x</code> and <code>y</code>, both satisfying the system of linear congruences. That is to say, <code>x</code> is congruent to <code>y</code> for each modulus <code>n_i</code>. Therefore, <code>x - y</code> is divisible by <code>n_i</code>. Since the moduli are pairwise co-prime, it follows that the product of the moduli, <code>N</code>, must also divide <code>x - y</code>. Therefore, <code>x</code> and <code>y</code> are congruent modulo <code>N</code>.</p>
+
+<h4>Application</h4>
+
+<p>It will be useful to algorithmically implement a solution to a system of linear congruences, which is guaranteed by the CRT. Let us consider how to construct such a solution. Consider the simple system below, consisting of two congruences, where <code>n_1</code> and <code>n_2</code> are co-prime.</p>
+
+<pre class = "nohighlight">
+    x = a_1 (mod n_1)
+    x = a_2 (mod n_2)
+</pre>
+
+<p>Consider how one might construct a solution for <code>x</code>. Consider <code>x = b_1 * n_1 + b_2 * n_2 (mod n_1 * n_2)</code>. The first condition gives</p>
+
+<p><code>b_1 * n_1 + b_2 * n_2 (mod n_1) = b_2 * n_2 (mod n_1) = a_1 (mod n_1)</code></p>
+
+<p>and the second gives</p>
+
+<p><code>b_1 * n_1 + b_2 * n_2 (mod n_2) = b_1 * n_1 (mod n_2) = a_2 (mod n_2)</code></p>
+
+<p>These show that <code>b_2 = a_1 * n_2^(-1) (mod n_1)</code> and <code>b_1 = a_2 * n_1^(-1) (mod n_2)</code>, respectively. The inverses are guaranteed to exist since <code>n_1</code> and <code>n_2</code> are relatively prime, and they may be found via the extended Euclidean algorithm. The solution for <code>x</code> is thus</p>
+
+<p><code>x = a_2 * n_1' * n_1 + a_1 * n_2' * n_2 (mod n_1 * n_2)</code></p>
+
+<p>where we are careful to use <code>n_1'</code> and <code>n_2'</code> to represent <code>n_1^(-1) (mod n_2)</code> and <code>n_2^(-1) (mod n_1)</code>, respectively, to avoid confusion.</p>
+
+<p>As an example, consider the following system:</p>
+
+<pre class = "nohighlight">
+    x = 3 (mod 4)
+    x = 6 (mod 11)
+</pre>
+
+<p>We first compute the inverses, which is easy using the extended Euclidean algorithm:</p>
+
+<img class = "small" src = "./images/tut_chinese_remainder_thm_1.png"/>
+
+<p>Then, we substitute and evaluate:</p>
+
+<pre class = "nohighlight">
+    x = 6 * 3 * 4 + 3 * (-1) * 11 (mod 4 * 11)
+    = 72 - 33 (mod 44)
+    = 39 (mod 44)
+</pre>
+
+<p>What about larger systems? We can use this same technique to "walk through" the system, combining two congruences into a single one at each step. This works because since all <code>n_i</code> are pairwise co-prime, the products of any disjoint pair of subsets will also be relatively prime.</p>
+
+<p>For example, suppose we add the condition <code>x = 5 (mod 7)</code> to the previous system. After performing the first step above, we are again left with a system of two congruences:</p>
+
+<pre class = "nohighlight">
+    x = 39 (mod 44)
+    x = 5 (mod 7)
+</pre>
+
+<p>We again perform the extended Euclidean algorithm:</p>
+
+<img class = "small" src = "./images/tut_chinese_remainder_thm_2.png"/>
+
+<p>Substituting, we get</p>
+
+<pre class = "nohighlight">
+    x = 5 * (-3) * 44 + 39 * 19 * 7 (mod 44 * 7)
+    = 4527 (mod 308)
+    = 215 (mod 308)
+</pre>
+
+<p>Alternatively, for a given system</p>
+
+<pre class = "nohighlight">
+    x = a_1 (mod n_1)
+    x = a_2 (mod n_2)
+    ...
+    x = a_k (mod n_k)
+</pre>
+
+<p>it is possible to directly find <code>b_i</code> in the formulation <code>x = b_1 m_1 + b_2 m_2 + ... + b_k m_k</code> by generalizing the strategy for the two-congruence case. Here, <code>m_i = N / n_i</code> is the product of all of the moduli <i>except</i> <code>n_i</code>. This ensures that when <code>x</code> is taken modulo <code>n_i</code>, only the <code>b_i m_i</code> term contributes (all other terms are divisible by <code>n_i</code>). Not surprisingly, <code>b_i = a_i m_i' m_i</code>, where <code>m_i' = m_i^(-1) (mod n_i)</code>.</p>
+
+<p>For our example system above,</p>
+
+<pre class = "nohighlight">
+    x = 3 (mod 4)
+    x = 5 (mod 7)
+    x = 6 (mod 11)
+</pre>
+
+<p>we would first compute <code>m_i</code> and their respective inverses:</p>
+
+<img class = "small" src = "./images/tut_chinese_remainder_thm_3.png"/>
+
+<p>For this problem, the inverses <code>m_1', m_3'</code> could easily be computed by inspection, and <code>m_2'</code> was computed in the previous solution. Evaluating,</p>
+
+<pre class = "nohighlight">
+    x = 3 * 77 * 1 + 5 * 44 * (-3) + 6 * 28 * 2 (mod 4 * 7 * 11)
+    = 231 - 660 + 336 (mod 308)
+    = -93 (mod 308)
+    = 215 (mod 308)
+</pre>
+
+<p>which is the same result as obtained previously.</p>
+
+<p>While both of the above methods work, the second one is perhaps slightly better suited for a programmatic implementation, since all of the <code>m_i</code> and <code>m_i'</code> factors can be computed all together rather than for every simplification step. This is shown in the snippet below, which must be run in Python version 3.9 and above (where exponent of <code>-1</code> performs the modular inverse).</p>
+
+<h4>Implementation</h4>
+
+<pre class = "python">
+    
+def solve_crt(a_arr, n_arr):
+    import functools
+    N = functools.reduce(lambda x, y: x * y, n_arr)
+    m_arr = [N // n for n in n_arr]
+    mp_arr = [pow(m, -1, n) for m, n in zip(m_arr, n_arr)]
+    return sum([a * m * mp for a, m, mp in zip(a_arr, m_arr, mp_arr)]) % N
+    
+</pre>

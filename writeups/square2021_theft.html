@@ -1,0 +1,38 @@
+<!--Add date: 11/02/2021-->
+
+<h1>Square CTF 2021 - Card Theft</h1>
+
+<h2>Exploitation - 100 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Overview and Introduction</h4>
+
+<p>This challenge from Square CTF 2021 offers an opportunity of a great demonstration of basic vulnerability discovery in Linux binaries. The methodology used here can be generally applied to analysis and exploitation of compiled software, although more conventional penetration testing strategies, such as fuzzing and automatic exploit generators, can potentially offer improved scalability at the expense of at best a statistical surveying of the attack surface. If you are new to binary exploitation and Linux binary reversing, read on!</p>
+
+<h4>In this challenge, we are provided with a <i>binary</i> and a <i>TCP network address</i>. In the context of software development, the term "binary" usually refers to a compiled program - a file that can be directly run on a computer system and typically is not easily interpreted by humans, much like how we don't typically resort to binary numbers when learning arithmetic. In this challenge, the binary is a Linux ELF (Executable and Linkable Format) which is distinct from Windows PE (Portable Executables) and macOS Mach-O formats. There are several other binary formats, but CTF exploitation challenges somehow nearly exclusively feature Linux ELFs. Simply put, TCP (Transmission Control Protocol) is a network layer in between network applications and IP, the Internet Protocol, that allows for communication of byte streams between two IP addresses. In typical exploitation CTF challenges, the service whose binary we are given is started on an IP address, and to prove that we have found the vulnerability in the service, we connect and interact with that IP. Linux's <code>netcat</code> utility allows for TCP communication directly through the terminal, but to send arbitrary bytestreams, it is better to write an exploit script.</h4>
+
+<h4>Understanding the Binary</h4>
+
+<p>Our goal is to find a vulnerability in the binary that we can use to perform an unintended action on the remote service. To do that, we need to first understand what the binary does, with a special focus on what kinds of inputs the program takes and how those inputs are processed. As previously discussed, binaries are not particularly human-readable, so we need a program that can turn the binary into a form that is more easily understood. Disassemblers and decompilers such as IDA and Ghidra are excellent tools for this purpose, and they are usually capable of handling a wide variety of binary formats. Let's analyze the ELF in this challenge in IDA.</p>
+
+<p>Opening the binary in IDA, we are presented with the disasssembly graph of the main function. This is the function that is first called when a user connects to the port and control is transferred to the binary. What can sometimes be useful is to take a look at the xref graphs from the main function. This is a directed graph that recursively shows function dependencies, down to "leaf" functions that don't call any other functions. For this binary, the xref graph looks as follows:</p>
+
+<img src = "./images/square2021_theft_1.png"/>
+
+<p>(Note that for very large binaries, the xref graph may be too large to be very meaningful.) Here, we see that <code>main()</code> references a collection of libary functions, but more importantly, it calls a local function <code>process_emv()</code>. At this point, we have no idea what this means - other than possibly that EMV has something to do with the payment standard. But we can see further that <code>process_emv()</code> itself calls a collection of other interesting functions, including <code>get_tag()</code>, <code>get_length()</code>, <code>read_iin</code>, among others.</p>
+
+<p>To begin, let's see where <code>process_emv()</code> is called in <code>main()</code>. The <i>arguments</i> to the function can give us clues about what it is doing. Shown below is the first time it is called.</p>
+
+<img src = "./images/square2021_theft_2.png"/>
+
+<p>Before the function is called, there is a buffer on the stack that is filled with some data. By inspection, this buffer begins at <code>rbp - 0x1a</code> and is <code>0xe - 14</code> bytes wide. Note that nowhere did the program indicate that this buffer is 14 bytes wide: we can infer from (1) the fact that 14 bytes are loaded in the form of a qword + dword + word onto the stack and (2) the fact that <code>0xe</code> is loaded into <code>rsi</code> that this is very likely the case. The first argument to the function in Linux 64-bit ELFs is <code>rdi</code>, the second in <code>rsi</code>, followed by <code>rdx</code>, <code>rcx</code>, <code>r8</code>, <code>r10</code>, and <code>r9</code>. Since only <code>rdi</code> and <code>esi</code> (the 32-bit low dword of <code>rsi</code>) are loaded here, we can be pretty confident that the function accepts two arguments.</p>
+
+<p>After looking at how <code>process_emv()</code> is called, we can now analyze the function itself. In IDA, directly clicking on the call target will switch the disassembly view to that function. We see a small function that appears to contain one loop:</p>
+
+<img src = "./images/square2021_theft_3.png"/>
+
+<p>The loop is indicated by a thick arrow between the bottom-left block and the middle block. Here, I have labeled the local (stack) variables based on the above discussion on how this function was called in <code>main()</code>. Apparently, <code>process_emv()</code> calls <code>process_tlv()</code> in a loop. <code>process_tlv()</code> is a comparatively larger function that seems to <i>parse</i> the input buffer in some manner. A description of each of the functions it calls is given below.</p>
+
+<h5><code>get_tag()</code></h5>
+

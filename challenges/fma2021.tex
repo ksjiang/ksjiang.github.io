@@ -1,0 +1,419 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage[margin=0.5in]{geometry}
+\usepackage{graphicx}
+\graphicspath{ {./Figures/} }
+
+\title{F = ma 2021 Writeup}
+\author{YR81}
+\date{02/27/2022}
+
+\begin{document}
+
+\maketitle
+
+
+\noindent{\textbf{Problem 1}}
+
+First, we can eliminate choices (A), (D), and (E) because speed is the magnitude of velocity and must always be nonnegative. Between (B) and (C), we must consider the dynamics of the ball as it transitions from the flat region to the sloped region. In the flat region, the acceleration of the center of mass is $0$ because there is no net force acting on the ball. As the ball mounts the ramp and continues to roll without slipping, it will have a constant acceleration of the center of mass, which can be seen from the constant gravitational torque that slows its rotation - thus, the static friction force must also be constant. The answer is \textbf{(C)}. 
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 2}}
+
+Here it is assumed that $\vec{e}_x$ is pointing in the horizontal direction. The velocity component in the horizontal direction is initially constant, but as the ball mounts the ramp, its kinetic energy is instantaneously divided into two parts: one for horizontal motion and the other for vertical motion. The vertial velocity upon entering the ramp is finite, so there must be an instantaneous jump in the horizontal velocity. After the ball mounts the ramp, its acceleration (in both dimensions) is uniform. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 3}}
+
+Let $P$ be the force that the two rods exert on each other via their ends. Summing moments for the left rod about the left pivot, we have
+
+$$\sum M_z = (F) (2 \text{ m}) - (P) (1 \text{ m}) = 0 \implies P = 2 F$$
+
+The transmitted force is twice the applied force. Summing moments for the right rod about the right pivot, we have
+
+$$\sum M_z = - (P) (0.5 \text{ m}) + (F') (2 \text{ m}) = 0 \implies F' = \frac{1}{4} P$$
+
+Combining the two, we see that $F' = \frac{1}{4} P = \frac{1}{4} (2 F) = \frac{1}{2} F$. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 4}}
+
+The westward displacement that Alice experiences is due to the Coriolis acceleration. Since her jump height $h \ll R$, then the radial component of this acceleration will be small compared to the gravitational acceleration. This also means that the gravitational acceleration can be well approximated through the entire trajectory as $g$. The Coriolis acceleration is $-2 \vec{\omega} \times \vec{v}_\text{rel}$, and for the tangential component, we only worry about the radial relative velocity, which decreases uniformly from $v_0 \hat{i}_\mathcal{B}$ (the initial jump velocity) to $-v_0 \hat{i}_\mathcal{B}$ (the final velocity as she lands), where $\mathcal{B}$ is a frame attached to the rotating equator.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 5}}
+
+Consider a free body diagram on the incline plane plus pulley system. It experiences weight, normal force, two downward tensions, and two tensions directed inward along the incline. The only forces that have a horizontal component are these last two tensions. But since the are acting directly opposite one another, they cancel. The incline feels no net force in the horizontal direction. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 6}}
+
+The net force on the box in the direction parallel to the incline is $F_\text{net} = F - f - W \sin \theta$, where $W = m g = (115 \text{ kg}) \left( 10 \frac{\text{N}}{\text{kg}} \right) = 1150 \text{ N}$. Substituting the numbers, the net force is
+
+$$F_\text{net} = 1.00 \times 10^3 \text{ N} - 4.00 \times 10^2 \text{ N} - (1150 \text{ N}) \sin (20^\circ) = 207 \text{ N}$$
+
+The acceleration of the box up the ramp is therefore
+
+$$a = \frac{F_\text{net}}{m} = \frac{207 \text{ N}}{115 \text{ kg}} = 1.80 \frac{\text{m}}{\text{s}^2}$$
+
+Now, using the kinematic relation
+
+$$v_f^2 = 2 a \Delta x$$
+
+since the box starts at rest, we can obtain
+
+$$v_f = \sqrt{2 a \Delta x} = \sqrt{2 \left( 1.80 \frac{\text{m}}{\text{s}^2} \right) (5.00 \text{ m})} = 4.24 \frac{\text{m}}{\text{s}}$$
+
+The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 7}}
+
+It is obvious that to minimize the travel time, the car should be either accelerating or decelerating at the maximum possible rates at all times. In this case, the maximum acceleration and deceleration are equal, so the optimal scenario has the car accelerating half the time and decelerating the other half of the time. Suppose the total travel time is $t$. The maximum velocity is attained at $\frac{t}{2}$ and is equal to $\frac{1}{2} a_0 t$. The average velocity for the entire trip (since we are undergoing uniform accelerations) is thus $\frac{1}{4} a_0 t$. The displacement is thus $d = \frac{1}{4} a_0 t^2$. This means that $t = 2 \sqrt{\frac{d}{a_0}}$. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 8}}
+
+First, the angular velocity of an imaginary bar ($\mathcal{B}$) connecting the center of the hoop ($O$) with the center of the disk ($B$) is given by $\omega_\mathcal{B} = \frac{2 \pi}{T}$, where $T$ is given as the period of the disk's motion. Since the disk rolls on the inside of the hoop without slipping, the instantaneous velocity of the point of contact $X$ must be $0$ (the hoop is fixed). From this, we can determine the \textit{spin rate} $\Omega_D$ of the disk as follows:
+
+$$^\mathcal{I} \vec{v}_X = \vec{0} = (R - r) \omega_\mathcal{B} \hat{j}_\mathcal{B} + (\Omega_D \hat{k}) \times \vec{r}_{B \to X} = (R - r) \omega_\mathcal{B} \hat{j}_\mathcal{B} + r \Omega _D \hat{j}_\mathcal{B}$$
+
+where unit vector $\hat{i}_\mathcal{B}$ always points in the direction $OB$, and $\hat{j}_\mathcal{B}$ is defined such that $\hat{k}$ is pointing out of the page. From this, balancing in $\hat{j}_\mathcal{B}$ gives
+
+$$\Omega_D = -\frac{R - r}{r} \omega_\mathcal{B}$$
+
+Letting $Y$ be the point diametrically opposite the point of contact on the disk, we have
+
+$$^\mathcal{I} \vec{v}_Y = (R - r) \omega_\mathcal{B} \hat{j}_\mathcal{B} + (\Omega_D \hat{k}) \times \vec{r}_{B \to Y} = (R - r) \omega_\mathcal{B} \hat{j}_\mathcal{B} - r \Omega_D \hat{j}_\mathcal{B}$$
+
+Substituting $\Omega_D$, we get
+
+$$^\mathcal{I} \vec{v}_Y \cdot \hat{j}_\mathcal{B} = (R - r) \omega_\mathcal{B} + (R - r) \omega_\mathcal{B} = 2 (R - r) \omega_\mathcal{B}$$
+
+Substituting $\omega_\mathcal{B} = \frac{2 \pi}{T}$, we obtain
+
+$$^\mathcal{I} \vec{v}_Y \cdot \hat{j}_\mathcal{B} = 4 \pi \frac{R - r}{T}$$
+
+The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 9}}
+
+The stick pivots about its left end. If the vertical (tangential) acceleration of the center of the stick is $0 < a < g$, then the angular acceleration of the stick must be $0 < \alpha < \frac{2 g}{L}$, where $L$ is the length of the stick. Summing moments about the left end gives (1) the angular acceleration in terms of $F$ and (2) a constraint on $F$:
+
+$$I \alpha = \frac{1}{3} m L^2 \alpha = F L - m g \left( \frac{L}{2} \right) \implies \alpha = 3 \frac{F}{m L} - \frac{3}{2} \frac{g}{L}$$
+
+$$\implies 0 < 3 \frac{F}{m L} - \frac{3}{2} \frac{g}{L} < \frac{2 g}{L}$$
+
+$$\implies \frac{1}{2} m g < F < \frac{7}{6} m g$$
+
+The vertical acceleration of the center of mass is
+
+$$a = \frac{L}{2} \alpha = \frac{3}{2} \frac{F}{m} - \frac{3}{4} g$$
+
+so the net force in the vertical direction must satisfy
+
+$$F_\text{net} = F - m g + N = m a = \frac{3}{2} F - \frac{3}{4} m g$$
+
+$$\implies N = \frac{1}{2} F + \frac{1}{4} m g \implies \frac{1}{2} m g < N < \frac{5}{6} m g$$
+
+The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 10}}
+
+This problem mirrors \textbf{Problem 1}. Initially, the downward acceleration will exceed $g$ since air resistance is also pointing dowards. When the object reaches the top of its trajectory, its acceleration will be exactly $g$, since there is no air resistance acting on an object at rest. As the object begins to descend, its downward acceleration will be less than $g$ and approaches $0$ as air resistance (pointing upwards) increases. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 11}}
+
+When a spring is cut in half, its spring constant \textit{doubles}. This is because two springs connected in series share an applied force and combine as $k' = \frac{1}{\frac{1}{k_1} + \frac{1}{k_2}}$; when $k_1 = k_2$, each will be equal to $2 k'$. ($k'$ represents the original spring constant.) When the mass is situated between these two new springs, they now share a displacement, so the system is equivalent to one with a single spring with constant $2 (2 k') = 4 k'$. Since $\omega \propto \sqrt{k}$ (the mass is constant), the new frequency will be $\sqrt{4} = 2$ times the original frequency. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 12}}
+
+The natural frequency of a pendulum is $\omega = \sqrt{\frac{g}{L}}$; the period is $T = \frac{1}{f} = \frac{2 \pi}{\omega} = 2 \pi \sqrt{\frac{L}{g}}$. Solving for $g$ gives $g = 4 \pi^2 L T^{-2}$. Taking the error on both sides, we have
+
+$$\delta g = \lVert \frac{\partial g}{\partial L} \delta L, \frac{\partial g}{\partial T} \delta T \rVert = \lVert 4 \pi^2 T^{-2} \delta L, -8 \pi^2 L T^{-3} \delta T \rVert = 4 \pi^2 L T^{-2} \lVert \frac{\delta L}{L}, -2 \frac{\delta T}{T} \rVert$$
+
+$$\implies \frac{\delta g}{g} = \lVert \frac{\delta L}{L}, 2 \frac{\delta T}{T} \rVert$$
+
+where $\lVert \cdot \rVert$ denotes the (L2) norm. In this case, the \textit{relative error} of length is $\frac{0.05 \text{ m}}{1.00 \text{ m}} = 0.05$ and the \textit{relative error} of period is $\frac{0.10 \text{ s}}{2.00 \text{ s}} = 0.05$. Thus, the above shows that the relative uncertainty in the calculated gravitational acceleration is $\frac{\delta g}{g} = \sqrt{(0.05)^2 + (2 \cdot 0.05)^2} = 0.112$.
+
+The expected gravitational acceleration from this experiment is
+
+$$4 \pi^2 (1.00 \text{ m}) (2.00 \text{ s})^{-2} = 9.87 \frac{\text{m}}{\text{s}^2}$$
+
+The absolute uncertainty in gravitational acceleration is thus $0.112 \left( 9.87 \frac{\text{m}}{\text{s}^2} \right) = 1.10 \frac{\text{m}}{\text{s}^2}$. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 13}}
+
+First, compute the normal stress in the tightrope, which is
+
+$$\sigma = \frac{F}{A} = \frac{4 F}{\pi d^2} = \frac{4 (7300 \text{ N})}{\pi \left( 2.54 \text{ cm} \left| 10^{-2} \frac{\text{m}}{\text{cm}} \right| \right)^2} = 1.44 \times 10^{7} \text{ Pa}$$
+
+Next, compute the strain in the rope, which is given by
+
+$$\epsilon = \frac{\delta L}{L} = \frac{1}{\cos (1.5^\circ)} - 1 = 3.43 \times 10^{-4}$$
+
+The elastic modulus is
+
+$$E = \frac{\sigma}{\epsilon} = 4.20 \times 10^{10} \text{ Pa}$$
+
+The answer is \textbf{(E)}.
+
+Note: This is \textit{not} a realistic elastic modulus for a rope material.
+
+
+\vspace{2 \baselineskip}
+
+\noindent{\textbf{Problem 14}}
+
+Assuming the rods are massless (their masses are not given)... When rotating in-plane, the moment of inertia of the system is $I = 3 M R^2$. The gravitational torque for small angular displacements is $\tau = -M g \theta$. The (angular) frequency is thus $\omega = \sqrt{\frac{M g}{3 M R^2}} = \frac{1}{\sqrt{3}} \sqrt{\frac{g}{R}}$, or the period is $T = \frac{2 \pi}{\omega} = 2 \sqrt{3} \pi \sqrt{\frac{R}{g}}$.
+
+When rotating in and out of the plane, the two horizontal masses are now on-axis and do not contribute to the moment of inertia. The new inertia is $I' = M R^2$. The gravitational torque is still $\tau = -M g \theta$. The new angular frequency is $\omega = \sqrt{\frac{M g}{M R^2}} = \sqrt{\frac{g}{R}}$, and the new period is $T' = 2 \pi \sqrt{\frac{R}{g}}$.
+
+The desired ratio is $\frac{T}{T'} = \sqrt{3}$. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 15}}
+
+The total energy of the satellite-Earth system is
+
+$$E = -G \frac{M m}{R} + \frac{1}{2} m v^2$$
+
+Since the orbit is circular, $v$ is constant and related to the gravitational force by
+
+$$G \frac{M m}{R^2} = m \frac{v^2}{R} \implies v^2 = \frac{G M}{R}$$
+
+Substituting into the total energy,
+
+$$E = -G \frac{M m}{R} + \frac{1}{2} m \left( \frac{G M}{R} \right) = -G \frac{M m}{R} + \underbrace{\frac{1}{2} G \frac{M m}{R}}_{T} = -G \frac{M m}{2 R}$$
+
+Decreasing the total energy has the effect of changing the orbital radius:
+
+$$\Delta E = E' - E = -G \frac{M m}{2 R'} - \left( -G \frac{M m}{2 R} \right) = \frac{1}{2} G M m \left( \frac{1}{R} - \frac{1}{R'} \right)$$
+
+The new orbital radius is
+
+$$\frac{1}{R'} = \frac{1}{R} - \frac{2 \Delta E}{G M m}$$
+
+and the new kinetic energy is
+
+$$T' = \frac{1}{2} G M m \left( \frac{1}{R'} \right) = \frac{1}{2} G M m \left( \frac{1}{R} - \frac{2 \Delta E}{G M m} \right) = \frac{1}{2} G \frac{M m}{R} - \Delta E$$
+
+Here, $\Delta E = -1 \text{ J}$ (remember the total energy is \textit{decreasing}). So, the change in kinetic energy is $T' - T = -\Delta E = (+) 1 \text{ J}$. The kinetic energy increases by $1 \text{ J}$. The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 16}}
+
+Because the frame is non-inertial, during their jump, the non-accelerating astronaut will appear to be accelerating! Let's consider the equation
+
+$$^\mathcal{I} \vec{a}_X = \vec{0} = ^\mathcal{I} \vec{a}_C + ^\mathcal{B} \vec{a}_X + \vec{\alpha}_\mathcal{B} \times \vec{r}_{C \to X} + 2 \vec{\omega}_\mathcal{B} \times ^\mathcal{B} \vec{v}_X + \vec{\omega}_\mathcal{B} \times (\vec{\omega}_\mathcal{B} \times \vec{r}_{C \to X})$$
+
+where $\mathcal{I}$ is the inertial frame, $\mathcal{B}$ is a frame rotating with the station, $X$ is the astronaut, and $C$ is the center of the station. The acceleration we desire is $^\mathcal{B} \vec{a}_X$, the acceleration of $X$ relative to $\mathcal{B}$. Note that $^\mathcal{I} \vec{a}_C = \vec{0}$, since we assume that the center of the station is fixed in frame $\mathcal{I}$. Further, since the station is not undergoing any angular acceleration, the Euler term $\vec{\alpha}_\mathcal{B} \times \vec{r}_{C \to X} = \vec{0}$ as well. We can rearrange the equation to obtain
+
+$$^\mathcal{B} \vec{a}_X = -2 \vec{\omega}_\mathcal{B} \times ^\mathcal{B} \vec{v}_X - \vec{\omega}_\mathcal{B} \times (\vec{\omega}_\mathcal{B} \times \vec{r}_{C \to X})$$
+
+Beginning with the second term on the RHS, because the motion is 2-dimensional, it is easy to show that the vector $-\vec{\omega}_\mathcal{B} \times (\vec{\omega}_\mathcal{B} \times \vec{r}_{C \to X})$ is in the same direction as the vector $\vec{r}_{C \to X}$. This is a \textit{centrifugal} acceleration arising when viewing the motion of a non-accelerating point from a rotating reference frame. That is, the astronaut feels a force directed \textit{outwards} towards the floor of the station (hence the term ``artificial gravity'').
+
+The term that presents some challenge is the first term on the RHS, which is a \textit{Coriolis} acceleration. The relative velocity of the astronaut has $v_0 < R \Omega$, so it's clear that at all points in the jump, $^\mathcal{B} \vec{v}_X$ will have a radial component directed radially inward, so the relative acceleration $-2 \vec{\omega}_\mathcal{B} \times ^\mathcal{B} \vec{v}_X$ is always in the \textit{positive} tangential direction. That is, the astronaut feels a force that pushes them forwards of the point from where they jumped.
+
+The answer is \textbf{(B)}.
+
+Note: It turns out that as the astronaut gains tangential velocity, there is a growing component of the Coriolis acceleration that points radially inwards. But as long as the tangential velocity does not grow too large, the inward radial Coriolis component is weaker than the outward centrifugal acceleration.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 17}}
+
+For this problem, it's important to realize that the pictures are representing the shape of the sand at a single instant in time. Let's begin with the initial motion of the helicopter, which is constant velocity $v$ to the right. As the sand leaves the helicopter, it begins to accelerate downward, but its horizontal velocity remains $v$ (there are no forces in the horizontal direction). So, at any instance in time, the sand will form a vertical line below the helicopter. The only choice that reflects this is (D). To verify this answer, consider what happens as the helicopter suddenly begins moving at constant $v$ to the left. The sand after the direction change still forms a vertical line below the helicopter, but there will be an instantaneous jump between the initial stream (which continues to move to the right) and the current stream (which is moving to the left). The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 18}}
+
+By conservation of energy, the speed of the mass must increase the lower it is. We have
+
+$$E = m g z + \frac{1}{2} m v^2$$
+
+must remain constant. Between the bottom and the top,
+
+$$(v_b^2 - v_t^2) = 2 g (2 l) = 4 g l$$
+
+The tension in the rod at the bottom is $F_b = \frac{m v_b^2}{l} + m g$, and that at the top is $F_t = \frac{m v_t^2}{l} - m g$. The difference is $F_b - F_t = \frac{m}{l} (v_b^2 - v_t^2) + 2 m g = 4 m g + 2 m g = 6 m g$. It doesn't depend on the period or the length of the rod! The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 19}}
+
+We can think of the rain droplets as a uniform fluid with an ``effective density'' $\rho_\text{eff}$. The effective density is essentially the density of water times the water volume fraction. It satisfies the proportionality
+
+$$\rho_\text{eff} \propto n r_0^3$$
+
+The pressure exerted by a fluid of density $\rho_\text{eff}$ stagnating with initial speed $v_0$ is $\frac{1}{2} \rho_\text{eff} v_0^2$. So, the pressure satisfies the proportionality
+
+$$P \propto n r_0^3 v_0^2$$
+
+As the number density of droplets is doubled, but the radius and velocity of the droplets are both halved, the pressure would be reduced by a factor of $16$. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 20}}
+
+Let the unstretched length of the original spring be $l$. Then the initial statement translates to $U_0 = \frac{1}{2} k l^2$. The half springs will have lengths $\frac{1}{2} l$. The spring rate of each of the half springs, however, will be \textit{double} the spring rate of the original spring. (Why? Two springs connected end-to-end add according to $k_\text{total} = \frac{1}{\frac{1}{k_1} + \frac{1}{k_2}}$). So, the potential energy of both springs is $(2) \frac{1}{2} (2 k) \left( \frac{l}{2} \right)^2 = \frac{1}{2} k l^2 = U_0$, the same as the original potential energy. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 21}}
+
+Let's perform a force balance on the ball. The net horizontal force comes from friction, and its magnitude is $\mu m g$. Thus, the linear acceleration of the center of mass is $-\mu g$. Since the sphere's center of mass has an initial velocity of $v_0$, the velocity of the center of mass of the sphere is $v_0 - \mu g t$.
+
+Let's perform a moment balance about the center of the ball. The only force that generates a moment is (kinetic) friction, which has magnitude $\mu N = \mu m g$; this force acts at a point $r$ away from the center. The moment of inertia of the ball (a hollow sphere) is $I = \frac{2}{3} m r^2$. Therefore, the angular acceleration of the ball would be $\alpha = \frac{-\mu m g r}{\frac{2}{3} m r^2} = \frac{3 \mu g}{2 r}$. (The negative sign indicates that the rotation increases in the $-\hat{k}$ direction; i.e., into the page.) The initial rotation rate is $\omega = 0$, so the angular velocity of the ball at some arbitrary time $t$ (before the ball ``locks'' in its pure rolling state) is $\omega = -\frac{3 \mu g t}{2 r}$.
+
+To find when the ball ``locks'' into pure rolling, we will find the velocity at the contact point between the ball and the floor. Once this reaches $0$, then the ball will begin pure rolling. Letting the contact point be $X$ and the center be $C$, kinematics provides
+
+$$^\mathcal{I} \vec{v}_X = ^\mathcal{I} \vec{v}_C + ^\mathcal{B} \vec{v}_X + \vec{\omega}_\mathcal{B} \times \vec{r}_{C \to X}$$
+
+Here, the velocity of the center is $^\mathcal{I} \vec{v}_C = (v_0 - \mu g t) \hat{i}$. The relative velocity of the contact point with respect to the rotating frame $\mathcal{B}$ is $\vec{0}$; indeed, it is a point \textit{fixed} to the ball. Here, $\omega_\mathcal{B} = -\frac{3 \mu g t}{2 r} \hat{k}$, as discussed previously. Finally, $\vec{r}_{C \to X} = -r \hat{j}$ is the vector connecting the center of the ball to the contact point. In all,
+
+$$^\mathcal{I} \vec{v}_X = (v_0 - \mu g t) \hat{i} - \frac{3}{2} \mu g t \hat{i} = \left( v_0 - \frac{5}{2} \mu g t \right) \hat{i}$$
+
+Note that at all times, the velocity of the contact point is always purely in $\hat{i}$, which is reasonable (its vertical velocity is switching from down to up). The time it takes for the velocity to reach zero is simply
+
+$$t_C = \frac{2 v_0}{5 \mu g}$$
+
+The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 22}}
+
+Because the hole is small, we can assume that at any instant in time, the boat and the water inside are in static equilibrium. Let $h$ be the height of the water inside the boat. Let $z$ be the depth of the bottom of the boat from the surface. Initially, $h = 0$, and $z = z_0$, where we can find $z_0$ through a force balance on the boat with no water:
+
+$$\sum F_y = 0 = -W + (\rho g z_0) A$$
+
+$$\implies z_0 = \frac{W}{\rho g A}$$
+
+where $W$ is the weight of the boat and $A$ is the area of the bottom of the boat. When the depth of the boat is an arbitrary $z > z_0$,
+
+$$\sum F_y = 0 = -(W + \rho A h g) + \rho g z A$$
+
+$$\implies h = \frac{1}{\rho g A} (\rho g z A - W) = z - \frac{W}{\rho g A} = z - z_0$$
+
+The gauge pressure on the inside bottom of the boat is $\rho g h = \rho g (z - z_0)$. The gauge pressure on the outside bottom of the boat, however, is $\rho g z$. Water flows into the boat because the pressure outside of the boat is $\rho g z - \rho g (z - z_0) = \rho g z_0$ larger than the pressure inside of the boat. Since the pressure difference is constant, and the hole geometry remains constant (constant impedance to flow), the flow rate through the hole will also be constant. The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 23}}
+
+Let $I_C = k M R^2$ be the moment of inertia of the ball about its center of mass, where $k$ is a nondimensional constant. Let $X$ be the contact point between the ball and the ramp, and $C$ be the center of mass of the ball.
+
+When the angle is low enough, $\theta < \theta_C$, static friction will keep the ball in pure rotation. The angular acceleration is dictated by the gravitational torque, which goes as $\tau_g = M g R \sin \theta$. Since the moment of inertia $I_X = (1 + k) M R^2$, this means the angular acceleration $\alpha_1 = \frac{\tau_g}{I_X} = \frac{g}{R} \frac{\sin \theta}{1 + k}$.
+
+When the angle exceeds a certain point, $\theta > \theta_C$, however, the ball will begin to slip, since the maximum static friction force $f_k = \mu N = \mu M g \cos \theta$ is not enough to keep $X$ stationary. In this case, the angular acceleration about the center of mass is due solely to the kinetic friction, which exerts a torque $\tau_f = f_k R = \mu M g R \cos \theta$. Thus, the angular acceleration goes as $\alpha_2 = \frac{\tau_f}{I_C} = \frac{g}{R} \frac{\mu \cos \theta}{k}$.
+
+The question is, what is the $\theta_C$ at which the transition from $\alpha_1$ to $\alpha_2$ occurs? At this critical angle, the angular accelerations of the ball in both cases $\alpha_1, \alpha_2$ are equivalent. From the above, we have
+
+$$\frac{g}{R} \frac{\sin \theta_C}{1 + k} = \frac{g}{R} \frac{\mu \cos \theta_C}{k}$$
+
+$$\implies \tan \theta_C = \mu \frac{1 + k}{k} = \mu \left( 1 + \frac{1}{k} \right)$$
+
+Note that as we approach a point mass, $k \to \infty$ and we arrive at the familiar result for the critical angle at which a point mass begins to move down the incline, $\theta_C = \arctan \mu$. No matter what $\mu, k$ are, though, we expect to see $\alpha$ increasing with $\theta$ for $\theta < \theta_C$ and $\alpha$ decreasing with $\theta$ for $\theta > \theta_C$. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 24}}
+
+The equation of motion for the system is
+
+$$M l^2 \ddot{\theta} + M g l \sin \theta = 0$$
+
+or
+
+$$\ddot{\theta} + \frac{g}{l} \sin \theta = 0$$
+
+with initial conditions $\theta (t = 0) = 0, \dot{\theta} (t = 0) = -\frac{v_0}{l}$, where $v_0 = \sqrt{\frac{2 K}{m}}$. This is generally difficult to solve, but we can make some observations regarding the period of the solution. Recall that in the small-angle case, $\sin \theta$ is aptly approximated by $\theta$, and the solution to $\ddot{\theta} + \frac{g}{l} \theta = 0$ is given by $\theta = \frac{v_0}{l} \cos (\omega t)$, where $\omega = \sqrt{\frac{g}{l}}$. In actuality, looking at the next term in the expansion of sine, $\sin \theta \sim \theta - \frac{1}{3} \theta^3 + O (\theta^5)$. So, for $\theta$ not \textit{too} small, the cubic term serves to \textit{decrease} the restoring acceleration, which would in turn increase the time the mass takes to complete one full period of motion. So, the higher the initial velocity $v_0$, the larger values $\theta$ can achieve, and the longer the period will become.
+
+The above argument only holds, however, for $\theta < \pi$. If the mass is able to rotate completely around, as the initial velocity $v_0$ is increased, the period will clearly decrease. In the limiting case, gravity becomes irrelevant, and we just have uniform circular motion with $\omega = \frac{v_0}{l}$. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 25}}
+
+Begin by noting that the mean values reported by Alice and Bob are irrelevant to the uncertainty of the combinations. When we scale a measurement by a positive number $k$, the uncertainty is also scaled by $k$. (This comes from the result that the variance when scaling by $k$ goes as $k^2$.) When we add a measurement to another independent measurement, the uncertainty goes as $\delta (A + B) \sim \sqrt{(\delta A)^2 + (\delta B)^2}$. (This comes from the result that the variance of the sum of two independent random variables is just the sum of the variances of each variable.)
+
+Using these observations and the given uncertainties $\delta A = 8 \times 10^{-3} \text{ s}$, and $\delta B = 1.6 \times 10^{-2} \text{ s}$, we have
+
+$$\begin{cases}
+\delta (A) = \delta A = 8 \times 10^{-3} \text{ s} & 1 \\
+\delta \left( \frac{1}{2} A + \frac{1}{2} B \right) = \sqrt{\frac{1}{4} (\delta A)^2 + \frac{1}{4} (\delta B)^2} = 7.16 \times 10^{-3} \text{ s} & 2 \\
+\delta \left( \frac{4}{5} A + \frac{1}{5} B \right) = \sqrt{\frac{16}{25} (\delta A)^2 + \frac{1}{25} (\delta B)^2} = 8.94 \times 10^{-3} \text{ s} & 3
+\end{cases}$$
+
+The lowest uncertainty is provided by combination method 3, and the largest uncertainty is provided by combination method 2. The answer is \textbf{(B)}.
+
+
+\end{document}

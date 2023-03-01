@@ -1,0 +1,28 @@
+<!--Add date: 12/28/2021-->
+
+<h1>Practical Malware Analysis: Lab 1.1</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<p>Let's first upload the files to VirusTotal. For the DLL, 39 of the 68 vendors mark the file as malicious. For the EXE, 50 of the 68 vendors mark the file as malicious. In particular, Microsoft reports both as Win32 trojans (Skeeyah and Aenjaris). Some vendors report a Ulise signature. They are recognized as having been packed by Armadillo.</p>
+
+<p>Opening the file in PEView, we can see that the compile time for the DLL and EXE are both reported as December 19, 2010. Neither of the samples appears to be packed or obfuscated, as none of the sections have wildly differing raw and virtual sizes, and the import strings are clearly visible.</p>
+
+<img class = "small" src = "./images/pma_lab1p1_1.png"/>
+
+<img class = "small" src = "./images/pma_lab1p1_2.png"/>
+
+<p class = "caption">Figure 1. PEView file header report for the DLL and EXE samples, respectively.</p>
+
+<p>Now let's analyze the imports. The DLL imports three Windows DLLs: <code>KERNEL32.dll</code>, <code>MSVCRT.dll</code>, and <code>WS2_32.dll</code>. From KERNEL32, it imports <code>Sleep()</code> along with <code>CreateProcessA()</code>, <code>CreateMutexA()</code> and <code>OpenMutexA()</code>, and <code>CloseHandle()</code>. These functions suggest that the DLL can create processes, manage access to shared resources, and create delays. The imports from MSVCRT include <code>malloc()</code> and <code>free()</code> along with <code>strncmp()</code>, which are typical standard functions used by programs in general. More interesting are the imports from WS2_32, which are listed as ordinals rather than names. Imported functions include <code>socket()</code>, <code>closesocket()</code>, <code>connect()</code>, <code>send()</code>, <code>recv()</code>, <code>shutdown()</code>, <code>htons()</code>, <code>inet_addr()</code>, <code>WSAStartup()</code>, and <code>WSACleanup()</code>. These indicate that the DLL is able to communicate via the network.</p>
+
+<p>The EXE imports two Windows DLLs: <code>KERNEL32.dll</code> and <code>MSVCRT.dll</code>. From KERNEL32, it imports several functions used to read and write to files, including <code>FindFirstFileA()</code>, <code>FindNextFileA()</code>, <code>CreateFileA()</code>, <code>CreateFileMappingA()</code>, <code>MapViewOfFile</code>, and <code>UnmapViewOfFile</code>. These functions indicate that the program may open, create, and possibly modify files. From MSVCRT, the EXE imports <code>malloc()</code> (but, interestingly, not <code>free()</code>), <code>exit()</code>, and a number of other ambiguous functions.</p>
+
+<img class = "small" src = "./images/pma_lab1p1_3.png"/>
+
+<img class = "small" src = "./images/pma_lab1p1_4.png"/>
+
+<p class = "caption">Figure 2. PEView file <code>.rdata</code> section header IMPORT Name Table for the DLL and EXE samples, respectively.</p>
+

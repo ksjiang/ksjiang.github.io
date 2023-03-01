@@ -1,0 +1,41 @@
+<!--Solve date: 07/19/2022-->
+
+<h1>Imaginary CTF - Reflection</h1>
+
+<h2>Reverse Engineering - 75 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Analysis</h4>
+
+<p>In this challenge, we are given a 64-bit Linux binary. Jumping into <code>main()</code>, we find that a prompt <code>>>> </code> is printed, then up to 100 characters are read into <code>s</code>. Then, a loop is entered, with three indices, labeled below as <code>c, x, y</code>. The index <code>x</code> addresses into a buffer called <code>flag</code>, which appears to contain 65 characters. Clearly, this is not the flag as advertised. However, the character from this buffer is XORed with the corresponding byte from <code>s</code> (the input). The result is compared against <code>&main - 0x1145 + y</code>, which is strange. The address of main is <code>0x1145</code> above the ELF image. Therefore, the binary compares with some data in the ELF header. If the character matches, we enter a second loop or check if we are done. The second loop increments <code>y</code> until a nonzero byte is found.</p>
+
+<img class = "small" src = "./images/ictf_reflection_1.png"/>
+
+<p>To recover the flag then, all we need to do is XOR the static buffer with the nonzero bytes in the ELF image. This can be easily done by first reading out the static buffer to a file, then walking the ELF image.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+flag = ''
+with open("./reflection", "rb") as f:
+    with open("./reflection_key.bin", "rb") as g:
+        while True:
+            c = g.read(1)
+            if len(c) == 0:
+                break
+
+            while True:
+                d = f.read(1)
+                if d != b'\x00':
+                    break
+
+            flag += chr(c[0] ^ d[0])
+
+print(flag)
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>ictf{did_you_know_that_function_names_are_just_pointers_to_code?}</code></p>

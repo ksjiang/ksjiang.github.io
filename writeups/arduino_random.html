@@ -1,0 +1,126 @@
+<!--Add date: 06/17/2022-->
+
+<h1>Random Number Generation on AVR Microcontrollers</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Analysis</h5>
+
+<p>To better understand random number seeding and generation on AVR microcontrollers, we analyze a program for the Arduino that (1) seeds the generator with the current time and (2) generates 10 random numbers. The source code is very short, presented below.</p>
+
+<pre class = "c">
+
+#include &lt;time.h&gt;
+
+void setup() {
+    unsigned char i;
+    // put your setup code here, to run once:
+    srand(time(0));
+    for (i = 0; i &lt; 10; i++)
+        rand();
+
+    return;
+}
+
+void loop() {
+    // put your main code here, to run repeatedly:
+
+}
+</pre>
+
+<p>The loop is empty; everything happens in the setup. Compiling and linking with the Arduino IDE, we obtain the attached ELF file. IDA recognizes the target architecture as Atmel, but we need to specify the particular processor (in this case, ATmega328P). (Note: I don't actually own an Arduino but the compilation and building can be done without the hardware.)</p>
+
+<p>As expected, the binary is not very large (about 11 kB), and in fact, there are only about <code>450</code> bytes of actual program text. We will start at the <code>RESET</code> vector at text offset 0, which is the address that the CPU jumps to when the RESET button is pressed. The code there performs a jump to address <code>0x34</code>, which is the reset handler.</p>
+
+<p>In the handler, register <code>r1</code> is first cleared and then output to <code>SREG</code>, the status register. This has the effect of clearing the flags. Then, register <code>r28</code> is set to <code>0xff</code> via the <code>SER</code> (set all bits in register) instruction. Register <code>r29</code> is set to <code>8</code>, rendering the pair <code>r29:r28 = 0x8ff</code>. This pair is copied to <code>SPH:SPL</code>, which sets the stack to <code>0x8ff</code>.</p>
+
+<p>After the stack pointer is initialized, four bytes of data are copied between addresses <code>Z = 0x38e</code> (<i>byte address</i> in ROM, accessed via <code>LPM</code>) and <code>X = 0x100</code> (in RAM, accessed via <code>ST</code>). This is where global variables with initialization are typically set, although there are none in the current program. Following initialization of data, <code>.bss</code> (RAM addresses <code>0x104 - 0x110</code>, inclusive) is cleared by storing <code>r1</code> (still containing zero) into each address.</p>
+
+<img class = "small" src = "./images/arduino_random_1.png"/>
+
+<p>Once <code>.bss</code> is initialized, the binary branches to our setup function. Global interrupts are enabled via <code>SEI</code>. Then, a series of interesting data movements follow. The lowest two bits of <code>TCCR0A</code>, the Timer/Counter 0 Control Register A, are set. The lowest two bits of <code>TCCR0B</code>, Timer/Counter 0 Control Register B, are also set. These have the effect of setting the waveform generation mode to 3, a fast PWM (pulse-width modulation) increasing counter from <code>0x00</code> to <code>0xff</code>, and the clock prescale to <code>64</code>. Since the external crystal is at <code>16 MHz</code>, this means that the <i>period</i> of the PWM will be about <code>977 Hz</code>, close to <code>1 kHz</code>. The timer interrupt is enabled by setting the least significant bit of <code>TIMSK0</code> at RAM address <code>0x6e</code>. After Timer/Counter 0 is configured, Timer/Counter 1 is set. Here, the waveform generation is set to mode 1, which is a phase correct 8-bit PWM with <code>TOP = 0xff</code>. Like Timer/Counter 0, the clock prescale for Timer/Counter 1 is also set to <code>64</code>. Identically, Timer/Counter 2 is set to mode 1, a phase correct PWM with <code>TOP = 0xff</code>, and the prescale is set to <code>64</code>.</p>
+
+<p>Following timer configuration, the analog-to-digital converter (ADC) is configured. The lowest three bits are set, which selects the finest division factor (128), and the ADC is enabled by setting the most significant <code>ADEN</code> bit. Finally, USART is disabled by clearing the <code>UCSR0B</code> register.</p>
+
+<p>Note that none of the above configuration instructions were explicitly listed in the source. The Arduino compiler automatically adds them for proper device functionality.</p>
+
+<p>The call to <code>time(0)</code> immediately follows. Arguments are passed to functions via the <code>r25:r24</code> register pair. Let's examine the <code>time()</code> function as defined in the <a href = "https://sourceware.org/git/?p=glibc.git;a=blob;f=time/time.c;h=d5dcb2e7ed83bc491ed026caf914caf4f1ae9202;hb=bc6c1af537dbcc05e1559e02f0f12942a829c224#l21" target = "_blank">GNU libc library</a>:</p>
+
+<pre class = "c">
+
+/* Return the time now, and store it in *TIMER if not NULL.  */
+time_t
+time (time_t *timer)
+{
+  struct timespec ts;
+  __clock_gettime (TIME_CLOCK_GETTIME_CLOCKID, &ts);
+
+  if (timer)
+    *timer = ts.tv_sec;
+  return ts.tv_sec;
+}
+</pre>
+
+<img class = "small" src = "./images/arduino_random_2.png"/>
+
+<p>The argument passed to <code>time()</code> is an address of a structure that is updated with the current time. In this case, we pass <code>NULL</code>, so the time is simply returned without being written to memory. But how is the current time gotten? On the Arduino, the dword is loaded from <code>__system_time</code> at RAM address <code>0x10d</code> in the <code>.bss</code> section. This address was never initialized or written to, so it will contain <code>0</code> every time. Indeed, the Arduino does not have a real-time clock (RTC) - so how could it get the time? This functionality therefore should <i>not</i> be used to seed the RNG on standalone Atmel controllers.</p>
+
+<p>Following the call to <code>time()</code> is <code>srand()</code>, which seeds the RNG. This turns out to be a simple operation, storing the input argument into the dword at the <code>.data</code> section. The random dword in program initialization is initially <code>1</code>; however, since <code>time(0)</code> returns <code>0</code>, the seed will be rewritten to <code>0</code>.</p>
+
+<p>Next, <code>r28</code> is set to <code>0xa</code> (10), and a loop is entered that repeatedly calls a function - <code>rand()</code> - and decrements <code>r28</code>.</p>
+
+<h5>A Deep Dive on <code>rand()</code></h5>
+
+<p>The function calls a helper with argument <code>0x100</code>, the RAM address of the random seed. The caller begins by saving several registers on the stack. The random seed address is then loaded into <code>r29:r28</code>, addressed by <code>Y</code>. The dword there is read into <code>r25:r22</code> and compared to <code>0</code>. If the seed is zero, <code>r25:r22</code> is initialized to the constant <code>0x75bd924 = 123459876</code>. The seed is divided by <code>0x1f31d = 127773</code>, and the quotient is saved in <code>r11:r8</code>. The remainder is multiplied by <code>0x41a7 = 16807</code>, and this result is saved in <code>r15:r12</code>. The quotient from the first step is retrieved, multiplied by the <i>signed</i> value <code>0xf4ec = -2836</code>. The product is stored in <code>r27:r24</code> and added to <code>r15:r12</code>. If the result overflows into the sign bit, it is adjusted. The final result in <code>r27:r24</code> is stored back into the seed. The lowest 15 bits of the seed is returned in <code>r25:r24</code>.</p>
+
+<img class = "small" src = "./images/arduino_random_3.png"/>
+
+<p class = "caption">Setting of default seed and random number generation algorithm.</p>
+
+<p>A concise implementation of this algorithm in Python follows.</p>
+
+<pre class = "python">
+
+MAX15 = 0x7fff
+MAX32 = 0xffffffff
+
+seed = 0
+def srand(s):
+    global seed
+    seed = s & MAX32
+    return
+
+def rand():
+    global seed
+    d = 127773
+    m1, m2 = 16807, -2836
+    if seed == 0:
+        seed = 123459876
+
+    seed = (m1 * (seed % d) + m2 * (seed // d)) & MAX32
+    return seed & MAX15
+    
+</pre>
+
+<p>This type of generator has been reported in a 1992 article on portable random number generators [1] as <i>Schrage's algorithm</i>. The article also reveals that the constants satisfy the relationship <code>(7**5) (127773) + 2836 = 2**31 - 1</code>.</p>
+
+<h4>Remarks</h4>
+
+<p>It turns out that there is another implementation of <code>random()</code> supported by Arduino [2]. However, upon closer inspection, it is practically identical to glibc <code>rand()</code>, with the only difference being that <code>random()</code> returns the lowest 31 bits of the seed (rather than just the lowest 15 bits). Also, <code>random()</code> is conveniently overloaded with the forms <code>random(max)</code> - which returns an integer between <code>0</code> and <code>max - 1</code> (inclusive) - and <code>random(min, max)</code>, which returns an integer between <code>min</code> and <code>max - 1</code> (inclusive), but these are derived from the usual transformation <code>min + random() % (max - min)</code>.</p>
+
+<p>Whether with <code>rand()</code> or with <code>random()</code>, the Arduino's stdlib RNG unfortunately cannot be reliably seeded with the current time, unless an external real time clock (RTC) is interfaced. According to Arduino forums, the recommended approach is to read the analog voltage from a pin left floating [2].</p>
+
+<h4>Attachment</h4>
+
+<p><a href = "./challenges/sketch_jun17a.ino.elf">Compiled binary for ATmega328P</a></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Press, W.; Teukolsky, S. <a href = "https://aip.scitation.org/doi/pdf/10.1063/1.4823101" target = "_blank">"Portable Random Number Generators"</a> <i>Computers in Physics</i> <b>1992</b> <i>6</i> (522).</p></li>
+    <li><p>Arduino, <code>random()</code> <a href = "https://www.arduino.cc/reference/en/language/functions/random-numbers/random/" target = "_blank">documentation</a>.</p></li>
+</ol>

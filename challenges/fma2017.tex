@@ -1,0 +1,400 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage[margin=0.5in]{geometry}
+\usepackage{graphicx}
+\graphicspath{ {./Figures/} }
+
+\title{F = ma 2017 Writeup}
+\author{YR81}
+\date{02/11/2022}
+
+\begin{document}
+
+\maketitle
+
+
+\noindent{\textbf{Problem 1}}
+
+Starting the set off is a scaling / dimensional analysis problem. Here, the friction force acting upwards on the motorcycle balances the motorcycle's weight. The motorcycle's weight is independent of its speed; that is, $W \propto s^0$. The friction force is given by $f = \mu N$, where $N$ is the normal force, in this case acting inwards from the wall. This shows that $f \sim W \propto s^0$. The normal force provides the centripetal acceleration required to keep the motorcycle in its circular path, so $N \propto s^2$ from kinematics. Then we find $f \propto \mu N \propto \mu s^2 \propto s^0$, which means that $\mu \propto s^{-2}$. Friction coefficient varies as the inverse square of the motorcycle's speed. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 2}}
+
+In the initial case, the oscillation frequency is $\omega = \sqrt{\frac{K}{m}}$, where $K$ is the spring constant. Note that even though the mass experiences gravity, the oscillation frequency does not depend on it (if you don't believe this, write and solve the equations of motion).
+
+In the case where the box is also falling, it's as if we have two masses $m$ and $M$ connected by a spring $K$. Again, we neglect gravity because it is a constant force and does not affect the dynamics about the equilibrium. Considering synchronous motion, the system only supports the two masses moving opposite of one another. In this case, looking only at $m$, it seems as if the spring length got shorter; i.e., the spring got stiffer. The frequency will increase. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 3}}
+
+The key point here is that there are no forces in the horizontal direction; so, the system's horizontal position of the center of mass cannot change. It remains to find where the initial center of mass is. The center of mass of the shell alone is simply at its center; the same goes for the ball, whose center is $R$ left of the shell's center. Since both objects have the same mass, the initial horizontal position of the center of mass is simply $\frac{R}{2}$ left of the shell's center. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 4}}
+
+We consider the distances between consecutive cars. Initially, all are at the same (small) value. As the first car in the line begins to accelerate, the first distance begins to increase. During this time, none of the other distances change. After one reaction time passes, the second distance begins to increase, but it will remain less than the first distance (until the target speeds have been reached). We will have an intermediate pattern that looks like II. In the end, all cars will be equally spaced, since the speed no longer increases after the target speed is reached, and all cars will accelerate at the same rate for the same amount of time. This is described by IV. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 5}}
+
+Since air resistance is negligible, the range is given by the product of the time of flight and the initial horizontal velocity. The initial horizontal velocity is simply $v_0 \cos \theta$. The time of flight is the zero of the height function
+
+$$z (t) = h + v_0 (\sin \theta) t - \frac{1}{2} g t^2$$
+
+The zero can be obtained by completing the square. First, let's multiply through by $-\frac{2}{g}$:
+
+$$0 = t_C^2 - \frac{2 v_0 \sin \theta}{g} t_C - \frac{2 h}{g}$$
+
+Now,
+
+$$0 = \left( t_C - \frac{v_0 \sin \theta}{g} \right)^2 - \frac{v_0^2 \sin^2 \theta}{g^2} - \frac{2 h}{g}$$
+
+or
+
+$$t_C = \frac{v_0 \sin \theta}{g} + \sqrt{\frac{v_0^2 \sin^2 \theta}{g^2} + \frac{2 h}{g}}$$
+
+In nondimensional terms,
+
+$$t_C = \left( \frac{v_0}{g} \right) \left( \sin \theta + \sqrt{\sin^2 \theta + 2 \hat{h}} \right)$$
+
+wherer $\hat{h} = \frac{h g}{v_0^2}$. It is instructive to note that for $h = 0$, the flight time reduces to the familiar $t_C = \left( \frac{v_0}{g} \right) (2 \sin \theta)$. For $\hat{h} > 0$, the time of flight is always \textit{less sensitive to $\theta$} compared to $2 \sin \theta$ due to the contribution from $\hat{h}$. Therefore, we will be able to get additional range by directing the projectile more horizontally (smaller $\theta$) to increase horizontal velocity $\cos \theta$ while only slightly sacrificing time of flight $\sin \theta + \sqrt{\sin^2 \theta + 2 \hat{h}}$. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 6}}
+
+Take moments about the main string. Mass $M_1$ exerts a moment of $(400 \text{ g}) (0.4 \text{ m}) = 160 \text{ g-m}$ (note that because gravity is the only external force exerting moments on the system, we can simply use masses instead of always multiplying by $g$). Mass $M_4$ exerts a moment of $-(500 \text{ g}) (0.4 \text{ m}) = -200 \text{ g-m}$. Mass $M_2$ exerts a moment of $-(200 \text{ g}) (0.5 \text{ m}) = -100 \text{ g-m}$. This means that the moment from $M_3$ must be $-160 \text{ g-m} + 200 \text{ g-m} + 100 \text{ g-m} = 140 \text{ g-m}$. Since it is located at $0.2 \text{ m}$ from the fulcrum, we have $M_3 = \frac{140 \text{ g-m}}{0.2 \text{ m}} = 700 \text{ g}$. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 7}}
+
+The kinetic energy of the train and snow on top of it at some time $t$ is $K (t) = \frac{1}{2} (M + \rho t) v^2$. At some small time $\delta t$ later, the kinetic energy is $K (t + \delta t) = \frac{1}{2} (M + \rho (t + \delta t)) v^2 = K (t) + \frac{1}{2} \rho (\delta t) v^2$. The rate of change of kinetic energy is
+
+$$\lim_{\delta t \to 0} \frac{K (t + \delta t) - K (t)}{\delta t} = \lim_{\delta t \to 0} \frac{\frac{1}{2} \rho (\delta t) v^2}{\delta t} = \frac{1}{2} \rho v^2$$
+
+The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 8}}
+
+Only the engine does work in the horizontal direction. Since the rate of increase of kinetic energy of the train and the snow on top is $\frac{1}{2} \rho v^2$ as determined in the previous problem, this must also be the power supplied by the engine. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 9}}
+
+The water pressure (relative to atmosphere) at the bottom of a flask is $\rho g h$, where $h$ is the height of the water. Since the three bottom areas are equal, $F$ is only dependent on the height of the water column. Thus, $F_C > F_A > F_B$. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 10}}
+
+The gauge pressure at all locations at elevation $H$ above the base is $0$ (atmosphere). Thus, the gauge pressure at the base is $\rho g H$. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 11}}
+
+The force imparted by the initially moving sphere will not exert a torque on the rod and initially stationary sphere only if it is applied at the center of mass of the rod and initially stationary sphere. The total mass of the rod and initially stationary sphere is $m + 2 m = 3 m$, and the center of mass of the rod with mass $2 m$ is at $\frac{L}{2}$ above the base. So, the center of mass of the rod with the initially stationary sphere is $\frac{(2 m) \left( \frac{L}{2} \right)}{3 m} = \frac{L}{3}$. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 12}}
+
+It does not matter what the magnitude of the force applied by the initially moving sphere is; as long as the force is applied at the location determined in the previous problem, it will not rotate the rod and initially stationary sphere. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 13}}
+
+Let the tension in the rope be $T$. The force balance and the kinematic constraint imposed by the rope on the two masses give the following system:
+
+$$\begin{cases}
+M a_1 = T - M g \\
+(M + m) a_2 = T - (M + m) g \\
+a_2 = -a_1
+\end{cases}$$
+
+Subtracting the second equation from the first and substituting the third equation gives $M a_1 - (M + m) a_2 = m g \implies (2 M + m) a_1 = m g \implies a_1 = (g) \left( \frac{m}{2 M + m} \right)$. Substituting into the first equation gives the tension as
+
+$$T = M (a_1 + g) = (M g) \left( \frac{m}{2 M + m} + 1 \right) = (M g) \left( \frac{2 M + 2 m}{2 M + m} \right)$$
+
+Let $\hat{m} = \frac{m}{M}$. Then
+
+$$T = (M g) \left( \frac{2 + 2 \hat{m}}{2 + \hat{m}} \right)$$
+
+As $m \gg M \implies \hat{m} \gg 1$ (the difference in masses becomes very large compared to the mass of the lighter block), then
+
+$$\lim_{\hat{m} \to \infty} T = (M g) \lim_{\hat{m} \to \infty} \left( \frac{2 + 2 \hat{m}}{2 + \hat{m}} \right) = 2 M g$$
+
+So, the tension increases, but approaches a (finite) constant. The answer is \textbf{(D)}.
+
+Note: The intuitive explanation for this result is that in the limit as one side becomes extremely heavy with respect to the other, it's basically as if the rope and pulley are not even there to slow the heavy side down. The heavy side is free falling and accelerating the lighter side through the rope at a rate of $g$, so the tension in the rope is essentially $2 M g$.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 14}}
+
+Let the moment of inertia of each object about its center be $I_C = \alpha M R^2$, where $\alpha$ is some nondimensional constant. (For a solid sphere, $\alpha = \frac{2}{5}$; for a solid disk, $\alpha = \frac{1}{2}$; for a spherical shell, $\alpha = \frac{2}{3}$; and for the hoop, $\alpha$ is unity.) Performing a moment balance on the object about its contact point with the incline, gravity exerts a torque $\tau = M g R \sin \theta$. The angular acceleration of the object is $\frac{\tau}{I}$, where $I$ is the moment of inertia \textit{about the contact point}. By the parallel axis theorem, we can see that $I = I_C + M R^2 = (1 + \alpha) M R^2$. The linear acceleration of the center is simply $R$ multiplied by the angular acceleration. That is,
+
+$$a = \frac{M g R^2 \sin \theta}{(1 + \alpha) M R^2} = (g) \left( \frac{\sin \theta}{1 + \alpha} \right)$$
+
+The largest acceleration will therefore be experienced by the object with the smallest $\alpha$, which is the solid sphere. The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 15}}
+
+As shown in the previous problem, all objects will accelerate uniformly, and the acceleration (normalized to the gravitational acceleration) only depends on the angle of the incline and the nondimensional moment of inertia. Suppose the linear acceleration is $a$. Moving through a vertical distance of $h$ is equivalent to moving a distance of $\frac{h}{\sin \theta}$ along the length of the incline. From kinematics,
+
+$$v_f^2 = 2 a \left( \frac{h}{\sin \theta} \right) = 2 (g) \left( \frac{\sin \theta}{1 + \alpha} \right) \left( \frac{h}{\sin \theta} \right) = (g h) \left( \frac{2}{1 + \alpha} \right)$$
+
+Here, the nondimensional velocity after dropping a specified height is only dependent on the nondimensionalized moment of inertia (not even on the incline angle!). Since all the choices are solid spheres, they will all have the same final speed. The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 16}}
+
+The vertical height of the end of the rod on the slanted wall is $L \sin \theta$, where $L$ is the length of the rod (constant). The distance from the corner to the end of the rod on the slanted wall is thus $L \left( \frac{\sin \theta}{\sin \alpha} \right)$ from the right triangle formed with the angle $\alpha$. Here, we note that $\alpha$ is also a constant. The only variable that is changing with time is $\theta$. The rate of change of the desired distance is $L \left( \frac{\cos \theta}{\sin \alpha} \right) \dot{\theta}$, where $\dot{\theta}$ is the (currently unknown) rate of change of the angle $\theta$ (this also happens to be the angular velocity of the rod).
+
+To get $\dot{\theta}$, we must use the fact that $\theta$ depends on the distance between the end of the rod on the horizontal wall and the wall corner. Specifically, letting $x$ be this distance, we have from the law of sines that $\frac{x}{\sin (\alpha - \theta)} = \frac{L}{\sin \alpha}$, or $x = (L) \left( \frac{\sin (\alpha - \theta)}{\sin \alpha} \right)$. Then, $\dot{x} = v = (L) \left( \frac{\cos (\alpha - \theta) (-\dot{\theta})}{\sin \alpha} \right)$ or $\dot{\theta} = -\left( \frac{v}{L} \right) \left( \frac{\sin \alpha}{\cos (\alpha - \theta)} \right)$. The desired rate of change is thus
+
+$$L \left( \frac{\cos \theta}{\sin \alpha} \right) \left( -\left( \frac{v}{L} \right) \left( \frac{\sin \alpha}{\cos (\alpha - \theta)} \right) \right) = -v \left( \frac{\cos \theta}{\cos (\alpha - \theta)} \right)$$
+
+Of course, the negative sign here indicates that as $v$ is positive (the bottom of the rod moves further from the corner), the distance between the corner and the other end shrinks. For the \textit{speed} of the other end, we just take the absolute value. The answer is \textbf{(D)}.
+
+Note: This problem requires some basic calculus knowledge.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 17}}
+
+During the last second of freefall, the object has an average speed of $60. \frac{\text{m}}{\text{s}}$. Since the acceleration is uniform, the speed at the start of this time segment must be $60. \frac{\text{m}}{\text{s}} - \frac{1}{2} (1.0 \text{ s}) \left( 10. \frac{\text{m}}{\text{s}^2} \right) = 55 \frac{\text{m}}{\text{s}}$.
+
+Now, we have from kinematics
+
+$$v_f^2 = v_0^2 + 2 g \Delta z$$
+
+where here, we take $v_f = 55 \frac{\text{m}}{\text{s}}$, $\Delta z = 180 \text{ m} - 60 \text{ m} = 120 \text{ m}$ so that
+
+$$v_0 = \sqrt{\left( 55 \frac{\text{m}}{\text{s}} \right)^2 - 2 \left( 10. \frac{\text{m}}{\text{s}^2} \right) (120 \text{ m})} = 25 \frac{\text{m}}{\text{s}}$$
+
+The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 18}}
+
+This problem requires a solid understanding the different types of acceleration arising in circular motion. There are three here. First, we have the linear acceleration due to the application of the force. This is the same at all points on the disk and points directly to the right. Second, there is the centripetal acceleration due to the nonzero angular velocity of the wheel. This always points toward the center of the disk. Finally, as a result of static friction at the contact, the wheel undergoes angular acceleration, which induces a tangential acceleration that increases in magnitude further away from the center of the wheel (Euler acceleration).
+
+In IV, the centripetal acceleration points up and to the left, and the Euler acceleration points down and to the left. Along the $315^\circ$ radius, the sum of these two vectors is pointing directly to the left. Provably, there is a position on this segment where the magnitude of the sum of these two vectors is exactly the magnitude of the rightward linear acceleration. At this point, the total acceleration is identically zero. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 19}}
+
+Up the ramp, the magnitude of acceleration of the puck is $a_1 = g \sin \theta + \mu g \cos \theta$. Down the ramp, the magnitude of acceleration of the puck is $a_2 = g \sin \theta - \mu g \cos \theta$. The ratio is
+
+$$r = \frac{a_1}{a_2} = \frac{\sin \theta + \mu \cos \theta}{\sin \theta - \mu \cos \theta} = \frac{\tan \theta + \mu}{\tan \theta - \mu}$$
+
+Then
+
+$$\mu = \frac{r - 1}{r + 1} \tan \theta$$
+
+From the graph, $r = \frac{2}{\frac{2}{3}} = 3$. We are also given $\theta = 30^\circ$, for which $\tan \theta = \frac{1}{\sqrt{3}}$. Thus,
+
+$$\mu = \frac{3 - 1}{3 + 1} \left( \frac{1}{\sqrt{3}} \right) = \frac{1}{2 \sqrt{3}} \approx 0.289$$
+
+The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 20}}
+
+In a completely inelastic collision, the objects stick together - that is, their final velocities are equal. By conservation of linear momentum, then,
+
+$$m v_0 = M v_f + m v_f$$
+
+which gives
+
+$$v_f = \frac{m}{m + M} v_0 = \frac{\hat{m}}{\hat{m} + 1} v_0$$
+
+where we define the mass ratio $\hat{m} = \frac{m}{M}$. The final momentum of the target mass is
+
+$$M v_f = (M v_0) \frac{\hat{m}}{\hat{m} + 1}$$
+
+The initial momentum is $m v_0 = (M v_0) \hat{m}$. Then by definition,
+
+$$f = \frac{1}{\hat{m} + 1}$$
+
+To maximize $f$, $\hat{m}$ should be made as small as possible. When $\hat{m} \ll 1$, the value of $f$ approaches unity. The answer is \textbf{(A)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 21}}
+
+In a perfectly elastic collision, energy is conserved.
+
+Let's start with in-line collisions. We can think about a reference frame fixed to the center of mass of the system. The velocity of the center of mass is always $v_C = \frac{m v_0}{m + M} = \frac{\hat{m}}{\hat{m} + 1} v_0$, where $\hat{m}$ is defined identically as in the previous problem. The initial relative velocity of the target block in this frame is $-v_C$; so, the final velocity of the target block in the frame must be $v_C$. In the inertial frame, the final velocity of the target block is $v_f = 2 v_C = \frac{2 \hat{m}}{\hat{m} + 1} v_0$. The final momentum of the target mass is
+
+$$M v_f = (M v_0) \frac{2 \hat{m}}{\hat{m} + 1}$$
+
+The initial momentum is $m v_0 = (M v_0) \hat{m}$. Here, $f = \frac{2}{\hat{m} + 1}$. When $\hat{m} \ll 1$ (the same limiting situation as the previous problem), the value of $f$ approaches $2$.
+
+The question is whether a collision that is not in-line could generate a higher value of $f$. (Think deflected at some angle.) This is easily dismissed as a possibility, since the maximum possible length of the sum of two vectors with given lengths (in this case $v_C$) is obtained when they are collinear.
+
+The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 22}}
+
+For this problem, we only consider in-line collisions for the same reasoning as presented in the previous problem.
+
+Using the results from the previous problem, the final kinetic energy of the target block would be
+
+$$T_f = \frac{1}{2} M v_f^2 = \frac{1}{2} (M v_0^2) \left( \frac{4 \hat{m}^2}{(\hat{m} + 1)^2} \right)$$
+
+The initial kinetic energy is
+
+$$T_i = \frac{1}{2} m v_0^2 = \frac{1}{2} (M v_0^2) \hat{m}$$
+
+By definition,
+
+$$f_\text{energy} = \frac{4 \hat{m}}{(\hat{m} + 1)^2}$$
+
+Taking a derivative with respect to $\hat{m}$, we obtain
+
+$$\frac{d }{d \hat{m}} f_\text{energy} = \frac{4 (\hat{m} + 1)^2 - 4 \hat{m} \left( 2 (\hat{m} + 1) \right)}{(\hat{m} + 1)^2} = \frac{4 \left( (\hat{m} + 1) - 2 \hat{m} \right)}{\hat{m} + 1} = \frac{4 (1 - \hat{m})}{1 + \hat{m}}$$
+
+This is zero when $\hat{m} = 1$, and we can verify that the derivative changes sign from positive to negative at this critical point, indicating a local maximum. When $\hat{m} = 1$, we have $f_\text{energy} = 1$. This is clearly the maximum possible fractional energy transfer. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 23}}
+
+The velocity of a wave through a taut string-like structure is $v \sim \sqrt{\frac{T}{\mu}}$. The tension for the spring is $T \sim k (L - L_0)$, where $L_0 = 1.0 \text{ m}$ is the natural length of the spring and $k$ is the spring constant. The linear mass density has $\mu \sim \frac{M}{L}$, where $M$ is the mass of the spring. Thus,
+
+$$v \sim \sqrt{\frac{k (L - L_0)}{\frac{M}{L}}} \sim \sqrt{\frac{k}{M} L (L - L_0)} \propto \sqrt{L (L - L_0)}$$
+
+The time for the wave to travel the length of the spring is
+
+$$t = \frac{L}{v} \propto \sqrt{\frac{L}{L - L_0}}$$
+
+This suggests
+
+$$t_2 = (t_1) \sqrt{\frac{L_2 (L_1 - L_0)}{L_1 (L_2 - L_0)}} = (1.0 \text{ s}) \sqrt{\frac{(20. \text{ m}) (10. \text{ m} - 1.0 \text{ m})}{(10. \text{ m}) (20. \text{ m} - 1.0 \text{ m})}} \approx 0.97 \text{ s}$$
+
+which is close to the original $t_1 = 1 \text{ s}$. The answer is \textbf{(C)}.
+
+Note: This problem requires knowledge of some basic calculus.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 24}}
+
+Select a reference frame fixed to the center of mass of the two masses. In such a frame, the masses do not translate; the spring only compresses and stretches. The velocity of the center of mass is $v_C = \frac{m v}{m + M}$. At the instance of impact, the relative velocity of $m$ is $v - \frac{m v}{m + M} = \frac{M}{m + M} v$, and the relative velocity of $M$ is $-\frac{m}{m + M} v$. The initial kinetic energy is therefore
+
+$$T_i = \frac{1}{2} m \frac{M^2}{(m + M)^2} v^2 + \frac{1}{2} M \frac{m^2}{(m + M)^2} v^2 = \frac{1}{2} \frac{m M}{m + M} v^2$$
+
+When the spring is maximally compressed, the kinetic energy in this frame is zero. Then $U = \frac{1}{2} k x^2$. Balancing, we find
+
+$$\frac{1}{2} k x^2 = \frac{1}{2} \frac{m M}{m + M} v^2$$
+
+$$\implies x = \sqrt{\frac{m M}{k (m + M)}} v$$
+
+The correct answer is \textbf{(A)}.
+
+Note: This isn't the best grouping of terms. To create a length, we need a velocity and a frequency. We have velocity. The natural frequency of the system is $\omega_n = \sqrt{\frac{k}{\mu}}$, where $\mu = \frac{m M}{m + M}$ is referred to as the \textit{reduced mass} of the system. With this, we simply get $x = \frac{v}{\omega_n}$.
+
+Note: For the curious reader, this (along with \textbf{Problem 2}) are \textit{two} degree-of-freedom systems, so we would expect \textit{two} natural modes. But we only found one in these two cases. What's the other one?
+
+Because these systems are ``free''; i.e., the masses are free to translate without any energy penalty; they are said to possess a ``rigid body'' mode. The frequency of this mode is always $0$ and is not technically an oscillation.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 25}}
+
+This problem features conservation of angular momentum. It can be solved without remembrance of Kepler's Laws.
+
+First, let's compute the angular momentum at the point $P$. The equation of an ellipse is
+
+$$\frac{x^2}{a^2} + \frac{y^2}{b^2} = 1$$
+
+where $a$ is the length of the semi-major axis, and $b$ is the length of the semi-minor axis. We wish to find the unit vector tangent to the orbit at point $P$. To do this, let's take a derivative with respect to $x$:
+
+$$\frac{2 x}{a^2} + \frac{2 y y'}{b^2} = 0$$
+
+$$y' = -\left( \frac{b}{a} \right)^2 \left( \frac{x}{y} \right)$$
+
+We need to determine the ratio $\frac{b}{a}$. To do so, we recall that $S$ is a focus, and we know from Pythagoras that $a^2 = b^2 + c^2$, where we define $c$ to be the distance from the center of the ellipse to the focus. We are given $c = \frac{1}{2} a$, such that $b = \frac{\sqrt{3}}{2} a \implies \left( \frac{b}{a} \right)^2 = \frac{3}{4}$. For point $P$, we have $x = -\frac{1}{2} a$; substituting into the ellipse with the value of $b$ just obtained, we find the $y$ coordinate to be $\frac{3}{4} a$, and so $\frac{x}{y} = \frac{-\frac{1}{2} a}{\frac{3}{4} a} = -\frac{2}{3}$. This means $y' = -\left( \frac{3}{4} \right) \left( -\frac{2}{3} \right) = \frac{1}{2}$. The velocity at point $P$ is thus $-v_1 \langle \frac{2}{\sqrt{5}}, \frac{1}{\sqrt{5}} \rangle$ (note the negative sign is because the planet is orbiting counterclockwise). The radius $SP$ is obviously $a \langle 0, \frac{3}{4} \rangle$. Thus, the angular momentum is
+
+$$\vec{L} = m \vec{r} \times \vec{v} = m \left( a \langle 0, \frac{3}{4} \rangle \right) \times \left( -v_1 \langle \frac{2}{\sqrt{5}}, \frac{1}{\sqrt{5}} \rangle \right) = \frac{3}{2 \sqrt{5}} m a v_1$$
+
+At perigee, the radius is simply $a \langle -\frac{1}{2}, 0 \rangle$, and the velocity is $-v_2 \langle 0, 1 \rangle$. The angular momentum is
+
+$$\vec{L} = m \vec{r} \times \vec{v} = m \left( a \langle -\frac{1}{2}, 0 \rangle \right) \times \left( -v_2 \langle 0, 1 \rangle \right) = \frac{1}{2} m a v_2$$
+
+Equating, we find
+
+$$v_2 = \frac{3}{\sqrt{5}} v_1$$
+
+The answer is \textbf{(A)}.
+
+
+\end{document}

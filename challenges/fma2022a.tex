@@ -1,0 +1,128 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage[margin=0.5in]{geometry}
+\usepackage{graphicx}
+\graphicspath{ {./Figures/} }
+
+\title{F = ma 2022 A Writeup}
+\author{Kyle Jiang}
+\date{03/30/2022}
+
+\begin{document}
+
+\maketitle
+
+
+\noindent{\textbf{Problem 1}}
+
+Use conservation of energy. The initial energy (with potential energy reference set to the throwing height) is $\frac{1}{2} m v^2$. At the given state, its kinetic energy is $\frac{1}{2} m \left( \frac{v}{2} \right)^2 = \frac{1}{8} m v^2$, and its potential energy is given to be $m g h$. At the maximum height, the energy is $m g H$, where $H$ is as yet undetermined. Here we can see that
+
+$$\frac{1}{2} m v^2 = \frac{1}{8} m v^2 + m g h \implies h = \frac{3}{8} \frac{v^2}{g}$$
+
+and that
+
+$$\frac{1}{2} m v^2 = m g H \implies H = \frac{1}{2} \frac{v^2}{g}$$
+
+It then follows that
+
+$$\frac{H}{h} = \frac{\frac{1}{2} \frac{v^2}{g}}{\frac{3}{8} \frac{v^2}{g}} = \frac{4}{3}$$
+
+The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 2}}
+
+During the deceleration in both cases, the car experiences the same resistive \textit{force} applied through the same \textit{distance} - it experiences the same \textit{change in energy}. If the car fully stops in the first case, then $W = \frac{1}{2} m v_1^2$. In the second case, where the initial velocity is $v_{2, i}$, the final energy would be $\frac{1}{2} m v_2^2 - W = \frac{1}{2} m v_{2, i}^2 - \frac{1}{2} m v_1^2 = \frac{1}{2} m (v_{2, i}^2 - v_1^2) = \frac{1}{2} m v_{2, f}^2$. This shows that
+
+$$v_{2, f} = \sqrt{v_{2, i}^2 - v_1^2} = \sqrt{(70 \text{ mph})^2 - (60 \text{ mph})^2} \approx 36.1 \text{ mph}$$
+
+The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 3}}
+
+It's easy to see that the direction of velocity of the first block before and after the collision must be the same. The initial kinetic energy of the system is $\frac{1}{2} m v_{1, i}^2$, where $v_{1, i} = 5 \frac{\text{m}}{\text{s}}$. The final velocity of the second block is found via conservation of momentum to be $v_{1, i} - v_{1, f}$, where $v_{1, f} = 2 \frac{\text{m}}{\text{s}}$. Thus, the final energy of the system is $\frac{1}{2} m v_{1, f}^2 + \frac{1}{2} m (v_{1, i} - v_{1, f})^2 = m v_{1, f}^2 + \frac{1}{2} m v_{1, i}^2 - m v_{1, i} v_{1, f}$. The \textit{decrease} in energy is $T_i - T_f = m v_{1, i} v_{1, f} - m v_{1, f}^2 = m v_{1, f} (v_{1, i} - v_{1, f})$. As a ratio to the intial energy, this is
+
+$$\frac{T_i - T_f}{T_i} = \frac{2 v_{1, f} (v_{1, i} - v_{1, f})}{v_{1, i}^2} = 2 \hat{v}_{1, f} (1 - \hat{v}_{1, f})$$
+
+where $\hat{v}_{1, f} = \frac{v_{1, f}}{v_{1, i}}$ is the \textit{ratio} of the final velocity of the first block to the initial velocity of the first block. In this case, $\hat{v}_{1, f} = \frac{2 \frac{\text{m}}{\text{s}}}{5 \frac{\text{m}}{\text{s}}} = 0.4$, so
+
+$$\frac{T_i - T_f}{T_i} = 2 (0.4) (1 - 0.4) = 0.48$$
+
+The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 4}}
+
+When the mass reaches II, it will once again be at rest, so when the string is cut, it will fall directly downwards. The answer is \textbf{(B)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 5}}
+
+If the ball were just translating, it would have kinetic energy $T_t = \frac{1}{2} m v^2$. However, it is also rotating, and the rotational kinetic energy is $T_r = \frac{1}{2} \alpha m R^2 \omega^2$, where $\omega = \frac{v}{R}$ from kinematics and $\alpha = \frac{2}{5}$ for a uniform solid sphere. Thus,
+
+$$T = T_t + T_r = \frac{1}{2} m v^2 + \frac{1}{2} \left( \frac{2}{5} \right) m R^2 \left( \frac{v}{R} \right)^2 = \frac{7}{10} m v^2$$
+
+Substituting $m = 1 \text{ kg}$ and $v = 1 \frac{\text{m}}{\text{s}}$, we find $T = \frac{7}{10} (1 \text{ kg}) \left( 1 \frac{\text{m}}{\text{s}} \right)^2 = 0.7 \text{ J}$. The answer is \textbf{(C)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 6}}
+
+The maximum tension in the rod will be at the bottom of the trajectory (gravity is directly opposing the tension and the speed will be maximized). To find rotational speed, we use conservation of energy. Initially, the energy of the system is $m g R$, where $R$ is the length of the rod (note that the rod is massless). At the bottom of the trajectory, the energy is $\frac{1}{2} m R^2 \omega^2$. Therefore, the speed at the bottom satisfies
+
+$$\omega^2 = \frac{2 g}{R}$$
+
+The centripetal force acting on the mass at the bottom is simply $m R \omega^2 = m R \left( \frac{2 g}{R} \right) = 2 m g$. The weight of the mass is $m g$. Therefore, the tension in the rod will be $3 m g$. The answer is \textbf{(D)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 7}}
+
+The plot is linear when plotted $x$-linear, $y$-log. This means that we can write
+
+$$\log y = A - B x$$
+
+($A, B > 0$) or
+
+$$y = A \exp (-B x)$$
+
+The answer is \textbf{(E)}.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 8}}
+
+If the mass is static on the wedge, we can consider the wedge and mass together as one system. The external forces on this system include its weight $2 m g$ acting directly downwards, the normal force, which acts directly upwards, and possibly friction. But neither weight nor the normal force has components in the horizontal direction, so the ground exerts \textit{no} friction force on the wedge. The answer is \textbf{(E)}.
+
+Note! It's tempting to say that since the wedge is exerting a friction force acting up the incline on the mass, then the mass must be pushing down the incline on the wedge. However, the horizontal component of the normal force between the wedge and mass ``cancels'' out the horizontal component of this friction force.
+
+
+\vspace{2 \baselineskip}
+
+
+\noindent{\textbf{Problem 9}}
+
+We can directly compute $F_v = m g$, while $F_a = m (g + a)$. In the second case, when the velocity is constant, it's easy to see that $F_v' = m g$, since $F$ is transmitted to both sides of the pulley, effectively pulling up as $2 F$, and the weight is $2 m g$. This is independent of the velocity $v$, since it is only a requirement on the dynamic equilibrium. \textit{However}, to accelerate the end of the string by $a$ is not the same as accelerating the block by $a$, in the second case.
+
+
+\end{document}

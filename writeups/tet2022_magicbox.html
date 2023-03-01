@@ -1,0 +1,80 @@
+<!--Solve date: 01/01/2022-->
+
+<h1>TetCTF 2022 - MagicBox</h1>
+
+<h2>Reverse Engineering - 744 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>High-Level Analysis</h4>
+
+<p>We are given a Windows binary that requests user input, then checks it. There are no strings that obviously indicate what the flag should be. There are a couple strings such as <code>Failed to init program</code> and <code>Failed to run program</code> that might suggest the program is running a virtual machine (VM).</p>
+
+<h4>Low-Level Analysis</h4>
+
+<p>Disassembling the binary, we discover that the program does indeed run a VM. The bytecode of the VM (consisting of <code>12870</code> bytes) is mapped into the memory space at offset <code>0x258</code> of a page returned by <code>VirtualAlloc()</code>. The value <code>0x12c</code>, which incidentally is the word offset corresponding to (byte) offset <code>0x258</code>, is stored into the first word of the mapped page.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_1.png"/>
+
+<p class = "caption">Figure 1. Mapping the bytecode.</p>
+
+<p>The VM itself is located at <code>0x401000</code>. It consists of the main program loop depicted in Figure 2 below.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_2.png"/>
+
+<p class = "caption">Figure 2. The implementation of the small virtual machine.</p>
+
+<p>The machine is rather simple. There is a <b>program counter</b> at word offset 0 of the mapping that points to the word offset of the next instruction to be executed. There is an <b>output flag</b> at word offset 4 of the mapping. If it is set to 1, then the VM will output the character in <code>r3</code> (word offset 3) and subsequently clear the flag. Simiarly, there is an <b>input flag</b> at word offset 6 of the mapping. If it is set to 1, then the VM will read one character into <code>r5</code> (word offset 5) and subsequently clear the flag. Following this, the VM fetches three words starting at the address pointed to by the program counter. The first two are treated as operand pointers, and the last is treated as the result pointer. The operands are fetched, ORed together, and the result is bitwise inverted. This final result is stored into the address pointed to by the result pointer. Finally, this result is rotated left one bit and copied to <code>r1</code> (word offset 1). Figure 3 below depicts the architecture of the machine.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_3.png"/>
+
+<p class = "caption">Figure 3. The architectural summary of the virtual machine.</p>
+
+<h4>Analyzing the Bytecode</h4>
+
+<h5>Character Output</h5>
+
+<p>To output a character to the screen, the program must load the character into <code>r3</code> and set <code>r4</code> to <code>1</code>. The first <code>0x168</code> bytes of the program output the string <code>Password:</code> by printing each character in turn. For instance, the bytecode to output the character <code>P</code> looks like the following:</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_4.png"/>
+
+<p class = "caption">Figure 4. Bytecode to output the character <code>P</code>.</p>
+
+<p>The character constant (inverted) is first loaded into <code>r7</code>, then copied to the character output register <code>r3</code>. The program then implements a little jump over the flag constant <code>1</code>, and finally sets <code>r4</code> to this constant, which causes the machine to output the character.</p>
+
+<h5>Character Input</h5>
+
+<p>The program reads user input beginning at address <code>0x186</code>. The process of reading characters occurs in much the same way as printing them. The program needs to set the output flag <code>r6</code> to <code>1</code>, and on the next cycle, the input will be stored in <code>r5</code>. From there, it can be copied into other registers and stored to memory.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_5.png"/>
+
+<p class = "caption">Figure 5. Bytecode to read one character.</p>
+
+<p>Again, the program performs a little jump over the flag constant <code>1</code>, then sets <code>r6</code> to this constant. This causes the program to read one character and store it into <code>r5</code>. From there, the input is copied (inverted) into <code>r7</code> and stored into memory address <code>0x1a23</code>.</p>
+
+<p>In all, the program reads 26 bytes and stores them in addresses <code>0x1a23 - 0x1a3c</code>.</p>
+
+<h5>Checking the Flag</h5>
+
+<p>The bytecode checks the flag one character at a time. There are several different types of checks used. However, the fundamental similarity between the checks is that they all use an XOR operation and up to two other bytes for checking - either constant or a previous index in the flag. The way XOR is implemented is via the identity <code>A ^ B = (A & !B) | (!A & B)</code>. Logical inverses can be easily calculated by feeding inputs twice to the machine: <code>f(A, A) = !(A | A) = !A</code>. Logical disjunction (OR) is implemented precisely by inverting the result of the machine's only operation; i.e., <code>f(f(A, B), f(A, B)) = A | B</code>. Logical conjunction (AND) is slightly more tricky to implement, but we have readily from deMorgan's Laws that <code>!(A | B) = !A & !B</code>.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_6.png"/>
+
+<p class = "caption">Figure 6. The most basic check: a direct XOR with a constant character.</p>
+
+<p>A simple example of a check stage is shown in Figure 6 above. First, <code>0x3fe</code> is loaded with the inverse of the first character (at address <code>0x1a23</code>). Next, <code>0x3ff</code> is loaded with the inverse of a constant at <code>0x1a0e</code>, which is <code>W</code>. Following a short jump, <code>0x40d</code> is also loaded with the inverse of the first character at <code>0x1a23</code>. The inverse of <code>0x3ff</code> is then loaded into <code>0x40e</code>. Note that since <code>0x3ff</code> contained the inverse of the constant at <code>0x1a0e</code>, <code>0x40e</code> gets the non-inverted version of the constant (<code>W</code>). Now, the program operates on <code>0x40d</code> and <code>0x40e</code>, which essentially puts <code>!(!input[0] | 'W') = input[0] & !'W'</code> into <code>r7</code>. This is stored into <code>0x3ff</code>. The same occurs with <code>0x425 &lt;- !'W'</code> and <code>0x426 &lt;- input[0]</code> to produce <code>!(!'W' | input[0]) = !input[0] & 'W'</code> in <code>r7</code>, subsequently stored in <code>0x3fe</code>. Finally, the values at <code>0x3fe</code> and <code>0x3ff</code> are operated, and the inverse of the operation (which is exactly the XOR of <code>input[0]</code> and <code>'W'</code>) is stored at <code>0x1a0d</code>. The value at <code>0x1ee</code> is then ORed with <code>0x1a0d</code>. Note that it can only remain zero if the result of the XOR is <code>0</code>; i.e., <code>input[0] = 'W'</code>.</p>
+
+<p>Other check stages are similar, using previous flag characters and constants to validate the current character. Some checks include a left rotation by <code>15</code> bits (equivalent to a right rotation by <code>1</code> bit). The most complicated check is depicted in Figures 7a-d below.</p>
+
+<img class = "small" src = "./images/tet2022_magicbox_7a.png"/>
+<img class = "small" src = "./images/tet2022_magicbox_7b.png"/>
+<img class = "small" src = "./images/tet2022_magicbox_7c.png"/>
+<img class = "small" src = "./images/tet2022_magicbox_7d.png"/>
+
+<p class = "caption">Figures 7a-d. A more complicated flag character check.</p>
+
+<p>This excruciatingly long piece of code can be broken down into more manageable pieces by first inspecting what it takes as inputs. The character to be checked is at <code>0x1a32</code>. It also references two constants, one at <code>0x1a17</code>, which is equal to <code>0x8026</code>, and the other at <code>0x1a1b</code>, which is equal to <code>0x8066</code>. Simply taking the XOR of these two constants gives <code>0x40 = '@'</code>, which turns out to be exactly the correct character. The same conclusion is reached (although after a much longer time) by carefully reversing the bytecode.</p>
+
+<h4>Flag</h4>
+
+<p><code>TetCTF{WE1rd_v1R7UaL_M@chINE_Ev3R}</code></p>

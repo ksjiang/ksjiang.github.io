@@ -1,0 +1,107 @@
+<!--Solve date: 12/13/2021-->
+
+<h1>X-Mas CTF 2021 - Ahoy</h1>
+
+<h2>Reverse Engineering - 500 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>Disclaimer: I did not solve this challenge by the time the first weekend of the CTF had concluded. I present here my solution process as a way to document some C++ reverse engineering strategies that may be of use in other reverse engineering endeavors.</p>
+
+<p>This challenge features a Windows PE binary along with a network capture of a device running the executable. The description of the challenge hints at audio data transmission. Taking a first look through the binary, we confirm that the network capture does indeed include the transfer of a recorded audio file. (This won't be demonstrated here, as it is not the main "challenge" of this challenge.)</p>
+
+<p>Essentially, an audio device is opened and audio is sampled at bitdepth <code>8</code> and frequency <code>11 kHz</code> and saved to a file <code>bell.wav</code>. This file is then opened and its contents are obfuscated before being sent over TCP to IP address <code>46.101.240.46</code>. We are able to see the obfuscated data transfers. The idea is that we can recover the audio data by reversing the obfuscation protocol.</p>
+
+<p>The obfuscation function is at address <code>0x140001000</code>. The function carries two arguments: the first being a pointer to a buffer to be obfuscated, and the second the length of the data to be obfuscated. The binary is compiled C++, so reverse engineering can be somewhat of a headache. We must carefully follow the registers throughout the subroutine.</p>
+
+<p>First, the size argument is checked to see if it is negative. If so, the function returns immediately. We now arrive at the first loop. In this loop, we iterate over the entire buffer. Each byte is replaced by the right-shifted sum of itself and the next byte. For example, if the first byte in the sequence were <code>0x3a</code> and the second were <code>0x51</code>, then the first byte would be replaced by <code>(0x3a + 0x51) &gt;&gt; 1 = 0x8b &gt;&gt; 1 = 0x45</code> - the rounded average of the two bytes. Note that we are undoubtedly losing one bit of information per pair in this process: knowing that the second byte is <code>0x51</code>, the result <code>0x45</code> would have also been obtained had the first byte been <code>0x39</code> as well. So, this operation is fundamentally irreversible. However, we recall that we are working with <i>audio</i> data, which is a discrete sampling of a continuous waveform. The effect of this step is essentially a <i>smoothing / averaging</i> transformation with <code>N = 2^3 = 8</code>, which although does in fact lose information related to noise and sharp transitions in the signal, should retain most of the signal in the frequency range we care about.</p>
+
+<img class = "small" src = "./images/xmas2021_ahoy_1.png"/>
+
+<p class = "caption">Figure 1. Smoothing loop.</p>
+
+<p>After the signal is smoothed, the second set of loops is entered. Here, the buffer is again traversed. One byte of the buffer is read and compared with the byte immediately following it. If the second (unsigned) byte is strictly larger than the first (unsigned) byte, <code>r11b</code> is set (otherwise cleared). Similarly, a third byte is read and compared with the second; if it is strictly larger, then <code>r8b</code> is set (otherwise cleared). Then, <code>r11b</code> and <code>r8b</code> are checked for equality. If they are unequal, then a counter <code>r9d</code> is incremented. The counter is also incremented if it has been at least <code>31</code> bytes since the last increment, or if the end of the buffer is reached. Note that besides the edge cases, the count is incremented <i>whenever the signal changes direction</i>; i.e., from non-increasing to increasing, or from increasing to non-increasing.</p>
+
+<p>The result of this loop is the final counter value, which is used to calculate the size of the output buffer. Each count receives one halfword (2 bytes). The buffer is again traversed, and the value of the (smoothed) signal at the last point in the sequence is recorded. For instance, if at some point the signal had the values <code>0x7a, 0x80, 0x7f</code> (transition from increasing to non-increasing), the <code>0x7f</code> byte is sampled. The byte is transformed according to the following rule:</p>
+
+<p><code>x**5 + 13 * x**3 + 853 * x (mod 2**11)</code></p>
+
+<p>and stored in the upper 11 bits of the output buffer halfword. Although not shown here, note that the mapping is injective (we can uniquely recover the sampled byte given a halfword in the output buffer) but obviously not surjective (which it need not be - just that we are "wasting" a few bits). The lower 5 bits of the halfword are set the number of bytes that have elapsed since the last sample, transformed according to the following rule:</p>
+
+<p><code>x**5 + 37 * x**3 + 5 * x (mod 2**5)</code></p>
+
+<p>This mapping is bijective and we can easily recover the offset since the last transition given the encoded value. In summary, this second loop <i>downsamples</i> the signal at the points when it changes direction - or every 31 bytes, whichever is more frequent. Just like the initial smoothing operation, this step is irreversible because we have lost all information about the values of the signal in between the sampled points. However, given two distinct times and signal values at those times <code>(t1, x1)</code> and <code>(t2, x2)</code>, we know that if <code>x1 &lt; x2</code>, then for <code>t1 &lt; t &lt; t2</code>, we must have that <code>x1 &lt; x(t) &lt; x2</code>, and similarly if <code>x1 &gt;= x2</code>.</p>
+
+<img src = "./images/xmas2021_ahoy_2.png"/>
+
+<p class = "caption">Figure 2. Loop that samples the signal at its turning points and enters the obfuscated values in the output buffer.</p>
+
+<p>To approximate the smoothed signal, we can <i>interpolate</i> to fill in the missing samples. There are several methods for interpolation, but we don't need to be overly picky here since we only need the signal to be good enough to potentially discern human speech. Perhaps the simplest scheme is <i>piecewise contant interpolation</i>, where we assume the signal is constant and equal to the left sample for any two given adjacent samples. Note that this scheme is actually inconsistent with the downsampling scheme in the case that <code>x1 &lt; x2</code> since as we have just discussed, we know the intermediate points must be strctly larger than <code>x1</code>.</p>
+
+<img src = "./images/xmas2021_ahoy_3.png"/>
+
+<p class = "caption">Figure 3. Piecewise constant interpolation scheme to recover the smoothed signal. The blue trace is the true function, the red points are the downsampled values that are sent over the wire, and the grey points are the interpolated values.</p>
+
+<p>The data can be extracted using Wireshark by searching for the target IP address in the network capture, as shown below.</p>
+
+<img src = "./images/xmas2021_ahoy_4.png"/>
+
+<p class = "caption">Figure 4. TCP communication between source machine (local IP <code>192.168.0.102</code> and the target <code>46.101.240.46</code>).</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+import struct
+import numpy as np
+import scipy.io.wavfile
+
+d1 = {}
+for x in range(2048):
+    d1[x] = (x**5 + 13 * x**3 + 853 * x) % 2048
+
+inv_d1 = {v: k for k, v in d1.items()}
+
+d2 = {}
+for x in range(32):
+    d2[x] = (x**5 + 37 * x**3 + 5 * x) % 32
+
+inv_d2 = {v: k for k, v in d2.items()}
+
+def parse(word):
+    return (inv_d1[word >> 5], inv_d2[word % 32])
+
+s = 11025
+t = 15
+with open("./audio_enc.bin", "rb") as f:
+    sound = np.zeros(2 * t * s, dtype = np.uint8)
+    i = 0
+    prev = None
+    while True:
+        w = f.read(2)
+        if not w:
+            break
+
+        p,  = struct.unpack("&lt;H", w)
+        dat, offs = parse(p)
+        if offs:
+            sound[i: i + offs] = prev * np.ones(offs, dtype = np.uint8)
+        
+        prev = dat
+        i += offs
+
+# the last item
+sound[i: ] = prev * np.ones(len(sound[i: ]), dtype = np.uint8)
+
+# write the audio file
+scipy.io.wavfile.write("./audio.wav", s, sound)    
+</pre>
+
+<h4>Output Audio File</h4>
+
+<audio controls src = "./images/xmas2021_ahoy_5.wav"></audio>
+
+<h4>Flag</h4>
+
+<p><code>X-MAS{i_alexander_graham_bell_am_actually_santa_claus}</code></p>

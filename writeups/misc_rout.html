@@ -1,0 +1,19 @@
+<!--Add date: 03/22/2022-->
+
+<h1>Collection of Miscellaneous Reversed Procedures</h1>
+
+<h2>Reverse Engineering Documentation</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<p>This post is really just a long collection of procedures that I have encountered in various reverse engineering endeavors. The idea is to have a list of common procedures encountered in different projects. Being able to quickly identify the operation of a procedure speeds up analysis. Oftentimes, disassemblers cannot always recognize function signatures, and this is where manual analysis becomes particularly useful.</p>
+
+<h4>DELL BIOS Update: <code>0x428fe0</code></h4>
+
+<p>The function takes three arguments. Right away, the third argument (a count) is checked to see if it is zero. If it is zero, the function directly returns the first argument. If not, the second argument is multiplied by <code>0x01010101</code>. This is a rather strange constant, but if one considers the case where the multiplier is a single byte, then it's clear that all this is doing is duplicating the byte four times into a doubleword. The count is then compared with <code>0x20</code> (32). If less than or equal, it is taken modulo 4, and the result specifies how many times the second argument is copied into the address specified by the first argument. The count is then decremented by this number. See where this is going? Then, the second bit of the count is tested. If set, the doubleword containing four copies of the second argument is moved into the address specified by the first argument, and the count is decremented by 4. At this point, the count is guaranteed to be a multiple of 8, and the rest of the bytes are copied 8 at a time (<code>mov [edi], eax; mov [edi + 4], eax</code>).</p>
+
+<p>If, at the beginning, the count is larger than <code>0x20</code>, the procedure checks whether SSE2 instructions (involving the <code>xmm</code> registers) are available. If they are not, the steps above are taken. If SSE2 instructions are available, the quadword containing the byte to be copied is moved into <code>xmm0</code>, and the instruction <code>pshufd xmm0, xmm0, 0</code> is executed. Essentially this duplicates the doubleword to fill the 16-byte register. A loop is then entered in which bytes are copied 32 at a time (<code>movdqu xmmword ptr [edi], xmm0; movdqu xmmwordptr [edi + 10h], xmm0</code>) into the destination. When the count drops below <code>0x20</code>, the remaining bytes (if any) are copied starting at the count minus <code>0x20</code>. Note that this seemingly results in incorrect behavior if the original count (the third argument) were less than <code>0x20</code> because this would write into memory before the specified buffer. However, this path would not have been taken in the first place if the original count was less than <code>0x20</code>.</p>
+
+<p>Further optimization is offered if the third argument is not less than <code>0x80</code>. It's well known that moving to unaligned memory is slower than moving to aligned memory. Thus, assuming SSE2 instructions are available, the buffer is first filled to a point where aligned memory moves are possible. The count is adjusted accordingly. Then, bytes are copied <code>0x80</code> at a time until less than <code>0x80</code> bytes remain. The remaining bytes are completed based on the <code>0x20</code>-copying method described previously.</p>
+
+<p>In summary, the function implements an efficient <code>memset(char* buf, char c, int count)</code>.</p>

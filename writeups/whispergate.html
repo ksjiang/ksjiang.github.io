@@ -1,0 +1,87 @@
+<!--Add date: 02/01/2022-->
+
+<h1>WhisperGate Wiper Analysis</h1>
+
+<h2>Malware Reverse Engineering Documentation</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Sample Details</h4>
+
+<p>The sample can be downloaded <a href = "./challenges/whispergate.7z" target = "_blank">here</a>; the archive password is <code>infected</code>. Note the executable has been renamed with a PDF extension to prevent accidental execution after unpacking. <b>Warning: Do not run outside of a virtual machine.</b> The hashes are listed below.</p>
+
+<p>Size: <code>25092</code></p>
+
+<p>MD5: <code>343fcded2aaf874342c557d3d5e5870d</code></p>
+
+<p>SHA256: <code>191ca4833351e2e82cb080a42c4848cfbc4b1f3e97250f2700eff4e97cf72019</code></p>
+
+<h4>Overview</h4>
+
+<p>WhisperGate is a new malware that emerged in Ukraine in mid-January, 2022. It behaves like ransomware, overwriting the Master Boot Record of infected devices with a minikernel that displays a ransom message demanding payment in Bitcoin. However, <a href = "https://www.microsoft.com/security/blog/2022/01/15/destructive-malware-targeting-ukrainian-organizations/" target = "_blank">as analysts have already discovered</a>, the ransom message is the same across all infected machines, suggesting that files are actually not recoverable. The malware consists of three "stages": (1) the MBR infector, (2) a loader that downloads the next stage from a Discord server, and (3) the wiper. In this analysis, we will examine the final stage of the malware, the wiper. Others have already documented the operations of the <a href = "https://www.crowdstrike.com/blog/technical-analysis-of-whispergate-malware/" target = "_blank">MBR infector</a> and the <a href = "https://maxkersten.nl/binary-analysis-course/malware-analysis/dumping-whispergates-wiper-from-an-eazfuscator-obfuscated-loader/" target = "_blank">obfuscated loader</a>.</p>
+
+<h4>High-Level Analysis</h4>
+
+<p>As shown in Figure 1, the wiper imports many common utilities from <code>KERNEL32</code>, including functions to find files and read the command line.</p>
+
+<img class = "small" src = "./images/whispergate_1.png"/>
+
+<p class = "caption">Figure 1. A subset of the wiper's <code>KERNEL32</code> imports.</p>
+
+<p>Strings in the file notably consist of a large number of common file extensions, including <code>HTML</code>, essentially all of the Microsoft Office document types (.e.g, <code>.DOC</code>, <code>.XLS</code>, <code>.PPT</code>, and their <code>X</code> counterparts), program source code (e.g., <code>.ASM</code>, <code>.C</code>, <code>.CPP</code>, <code>.H</code>, <code>.VBS</code>), and backup and archive filetypes. Some of the strings are shown in Figure 2 below. Another interesting string appears to contain a command: <code>cmd.exe /min /C ping 111.111.111.111 -n 5 -w 10 > Nul & Del /f /q %s</code>. Breaking this down, we see that it executes a minimized <code>ping</code> process to IP address <code>111.111.111.111</code>, which appears to be owned by KDDI, a Japanese telecommunications company. The ping sends 5 packets with a timeout of 10 milliseconds. The outputs of the command are piped to null (so they will not be visible in the command prompt). Following this, the command <code>Del /f /q %s</code> is executed, with <code>%s</code> presumably substituted with a file name. Note that the flag <code>/f</code> forces deletion of read-only files, and <code>/q</code> deletes the specified file without asking for confirmation from the user.</p>
+
+<img class = "small" src = "./images/whispergate_2.png"/>
+
+<p class = "caption">Figure 2. File extension strings included in the binary.</p>
+
+<h4>Low-Level Analysis</h4>
+
+<h5>Self Destruction</h5>
+
+<p>We begin our analysis at the command string discussed in the previous section. The function that references it is shown in Figure 3.</p>
+
+<img class = "small" src = "./images/whispergate_3.png"/>
+
+<p class = "caption">Figure 3. Function deleting the currently-running executable.</p>
+
+<p>The disassembly clearly shows that the binary gets its own executable file name using <code>GetModuleFileNameA()</code>, then executes the command to delete the file corresponding to the currently-running executable. So, after the executable exits, it will be missing from the filesystem. The reason for the <code>ping</code> is likely to ensure that <code>Del</code> runs <i>after</i> the executable has finished.</p>
+
+<h5>File Destruction</h5>
+
+<p>The main malicious functionalities of this binary are actually executed just before it deletes itself from the filesystem. Figure 4 below shows the cross-references from <code>WinMain()</code>. It first calls the node labeled "others" before calling the node labeled "self".</p>
+
+<img class = "small" src = "./images/whispergate_4.png"/>
+
+<p class = "caption">Figure 4. Cross references from function called before exit.</p>
+
+<p>The function labeled "self" was discussed previously. Here, we take a closer look at the function labeled "others." The malware starts by calling <code>GetLogicalDrives()</code>, which returns a bit array describing the drives that are in use. The bit map is compared against <code>2**k</code> for <code>k = 0..25</code>, representing the drive letters <code>A-Z</code>. All existing drives that are <code>DRIVE_FIXED</code> and not <code>DRIVE_REMOTE</code> are infected.</p>
+
+<p>The infector is a relatively standard recursive function that takes in a file path, and uses <code>FindFirstFileW()</code> and <code>FindNextFileW()</code> to enumerate the directories and files in the path. Of course, the "files" <code>.</code> and <code>..</code>, which reference the current directory and the parent directory are skipped. Interestingly, the <code>$RECYCLE.BIN</code> is skipped as well (but only if the case matches as well!).</p>
+
+<p>The length of the filename is determined, then added to the length of the base directory path. A chunk is obtained through <code>malloc()</code>, then the base directory path and filename are concatenated in the chunk. All files in the directory <code>%HOMEPATH%</code> are ignored.</p>
+
+<p>Whether a file is actually a file or a directory is determined with a call to <code>_wstat</code>. If a directory is encountered, then the infector is called (recursively) after appending <code>\*</code> to the path string. If an actual file is encountered, the file extension is located by finding the last occurence of <code>.</code> within the filename. The extension is capitalized and compared, one by one, to a list of <b>195</b> extensions (discussed in the strings analysis above). As shown in Figure 5, if the extension matches one in the list, the malware (1) creates a new filename for it by truncating the last 4 characters (which would remove an entire <code>.XXX</code> extension) and replacing it with <code>.RRRR</code> (where <code>R</code> represents a nibble as part of a random doubleword generated using <code>rand()</code>), (2) overwrites its contents with 1 MiB of <code>0xcc</code> bytes, and (3) renames the file with the result from (1).</p>
+
+<img class = "small" src = "./images/whispergate_5.png"/>
+
+<p class = "caption">Figure 5. File wiper function.</p>
+
+<p>Figure 6 shows a set of files that were wiped by the infector. All of the files have the same hash, and the hash can be easily verified to match a file with 1 MiB of <code>0xcc</code> bytes.</p>
+
+<img class = "small" src = "./images/whispergate_6.png"/>
+
+<p class = "caption">Figure 6. Examples of files that were wiped.</p>
+
+<p>Sometimes the renaming scheme results in strange filenames. For instance, the first file, originally <code>C:\Program Files (x86)\Microsoft Office\root\Office16\1033\TelemetryLog.xltx</code>, has a file extension that is <i>4</i> characters long, so when the last four characters are truncated, the dot character survives and we get another dot when the random number is appended. Surprisingly, some files did not even get renamed, even though they were overwritten. The reason for this is not completely clear. Some likely possibilities are that the files are being locked from being renamed by other processes, or were named back by other processes.</p>
+
+<h5>Finally</h5>
+
+<p>After the files are deleted, <code>ExitWindowsEx()</code> is called with the <code>EWX_SHUTDOWN</code> flag, which ensures that all file buffers are flushed to disks and all processes are stopped. This is shown in Figure 7. The reason argument in the call to <code>ExitWindowsEx()</code> is set to <code>SHTDWN_REASON_MINOR_NETWORK_CONNECTIVITY</code>. This may be to partially justify the <code>ping</code> made to the strange IP address when the executable deleted itself from the filesystem.</p>
+
+<img class = "small" src = "./images/whispergate_7.png"/>
+
+<p class = "caption">Figure 7. Call to <code>ExitWindowsEx()</code> after file deletion.</p>
+
+<h4>Discussion</h4>
+
+<p>From the present analysis of the wiper, victims of WhisperGate should expect to find the majority of useful files outside <code>%HOMEPATH</code> overwritten. In terms of recovery, this is actually worse than deleting the file from the filesystem because the original data is effectively "forgotten". For files larger than 1 MiB, partial recovery may be possible depending on the filesystem.</p>

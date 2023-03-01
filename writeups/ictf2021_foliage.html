@@ -1,0 +1,270 @@
+<!--Solve date: 07/25/2021-->
+
+<h1>Imaginary CTF 2021 - Foliage</h1>
+
+<h2>Reverse Engineering - 400 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>This is an interesting challenge featuring a relatively large binary. Playing around with the service, we are given some kind of seed and then asked if we are ready. To learn more about the program, we reverse the binary.</p>
+
+<p>Starting in <code>main()</code>, there is first a call to <code>alarm(30)</code>, which indicates that there is a time limit for the connection. Then, there is a call to <code>init_rnd()</code>, which seems to read 2 quadwords from <code>/dev/urandom</code>, storing one in the seed that is printed to us, and the other in another variable. We receive no information about the second quadword.</p>
+
+<img src = "./images/ictf2021_foliage1.png"/>
+
+<p class = "caption">Figure 1. Seeding the random number generators.</p>
+
+<p>Following this, the binary allocates (using <code>calloc()</code>) 500001 items, each of size <code>0x20</code>. Then, there is a call to a function named <code>init_tree()</code>. This should indicate that the items in this large buffer are likely nodes in the tree. If each field is a quadword, then there are 4 fields associated with each node.</p>
+
+<p>The decompilation of the <code>init_tree()</code> function is shown below:</p>
+
+<img src = "./images/ictf2021_foliage2.png"/>
+
+<p class = "caption">Figure 2. Decompilation of <code>init_tree()</code>.</p>
+
+<p>There are essentially two iterations in this function. The first is simple: it sets (1) the <code>idx</code> field of the node (offset <code>0x18</code>) to the index of the node within the buffer, (2) the <code>b</code> field of the node (offset <code>8</code>) to NULL, (3) the <code>a</code> field to the value of the <code>b</code> field (which is just NULL), and (4) the <code>c</code> field to the address of itself. We can visualize this (if a field is not labeled, it is implied to be NULL):</p>
+
+<img src = "./images/ictf2021_foliage3.png"/>
+
+<p class = "caption">Figure 3. Nodes after the first loop.</p>
+
+<p>The second loop is a bit more complicated to analyze; it forms the actual tree. It iterates through the nodes (let's call each node a <i>victim</i>) starting at <code>250001</code> and ending with the end of the node list, <code>500000</code>. Two nodes are selected before the victim in the list according to the random generator seeded with the quadword that we know. The first one is set as the <code>a</code> field of the victim, while the second is set as the <code>b</code> field. We can think of <code>a, b</code> as the child fields of a node. Finally, according to the random genrator seeded with the <i>unknown quadword</i>, the <code>c</code> field of the victim is set equal to either the <code>c</code> field of the victim itself (just pointing to itself), or equal to the <code>c</code> field of one of the victim's children. Note that even though we don't know what <i>exactly</i> that field will be, we can make the easily-proven observation that the <code>c</code> field of any node always points to itself or one of its descendants.</p>
+
+<p>For the sake of demonstration, we can consider a smaller tree; one possible configuration is</p>
+
+<img src = "./images/ictf2021_foliage4.png"/>
+
+<p class = "caption">Figure 4. Sample tree with N = 4 nodes.</p>
+
+<p>Again, the structure of the tree (characterized by the parent-child relationships) can be completely recovered from the given seed. However, because we do not know the other seed, we do not know where the <code>c</code> fields of any of the nodes point to - except the leaves, which we know from the above must satisfy <code>node->c = node</code>, as they have no descendents. In the example, we would not know that <code>4->c == 2</code>, we would only know that <code>4->c in {4, 2, 0, 3}</code>; we would not know that <code>3->c == 2</code>, we would only know that <code>3->c in {3, 2, 0}</code>.</p>
+
+<p>Back in <code>main()</code>, there are two additional iterations. The first selects 50000 non-leaf nodes. It prints the <code>c</code> fields of both of each node's children. This provably uniquely determines the identity of the selected nodes (see proof below). After prompting for <code>Answers?</code>, the program reads in 50000 integers from the user, and checks that they are equal to the <code>idx</code> fields of the selected non-leaf nodes. If they are, the flag is printed.</p>
+
+<h5>Proof that <code>node->a->c</code> and <code>node->b->c</code> Uniquely Determine <code>node</code></h5>
+
+<p>Suppose that two nodes in the tree, <code>node1</code> and <code>node2</code>, satisfy <code>X = node1->a->c == node2->a->c</code> and <code>Y = node1->b->c == node2->b->c</code>. By the observation made above, we know that <code>X</code> is either equal to or it is a descendant of <code>node1->a</code>. Similarly, <code>X</code> is either equal to or it is a descendant of <code>node2->a</code>. In combination with the fact that paths from any two points in the tree are unique, <code>node1->a</code> must either be a descendant of, equal to, or ancestor to <code>node2->a</code>. (Using the language of partial ordering, they must be <i>comparable</i>.) By the same reasoning, <code>node1->b</code> must either be a descendent of, equal to, or ancestor to <code>node2->b</code>.</p>
+
+<p>Suppose that <code>node1->a</code> is a descendent of <code>node2->a</code>. Then it is easy to see that <code>node1</code> must be a descendant of <code>node2</code>. In this case, <code>node1->b</code> is not comparable to <code>node2->b</code>, and a contradiction is reached. A similar argument can be applied switching the roles of <code>node1</code> and <code>node2</code>. As a result, it must be the case that <code>node1->a == node2->a</code>, which means <code>node1 == node2</code>, and the statement is proved.</p>
+
+<h5>Finding Lowest Common Ancestors</h5>
+
+<p>In the above, we showed that even though the <code>c</code> fields of each node are randomly selected and unknown to us, the given information about <code>X = node->a->c</code> and <code>Y = node->b->c</code> is enough to uniquely identify <code>node</code>. The given indices of <code>X</code> and <code>Y</code> are both descendants of (or equal to) <code>node</code>. So, <code>node</code> must be the <i>lowest</i> common ancestor to both; that is, the deepest node in the tree that is ancestor (or equal) to both <code>X</code> and <code>Y</code>.</p>
+
+<p>A first (naive) attempt at finding LCA might look like the following: (1) determine the paths from the root to <code>X</code> and from the root to <code>Y</code>, and (2) find the last node that is common to both paths. This works, but has a poor time efficiency. Finding the path from root to a particular node using a conventional depth-first search has complexity <code>O(V)</code>, where <code>V</code> is the number of nodes. Assuming a relatively balanced tree, the complexity of scanning the path lists is <code>O(lg V)</code>, such that the overall complexity is <code>O(V)</code>. Implementing this technique in Python resulted in very slow search times, such that &lt;400 trials could be completed before the 30-second timeout.</p>
+
+<p>The more efficient approach is to use a variation of binary-lifting, essentially a binary-search algorithm within binary trees. A good demonstration can be found <a href = "https://www.youtube.com/watch?v=dOAxrhAUIhA" target = "_blank">here</a>. During the preprocessing phase, the nodes are updated with lists of their ancestors and their depths within the tree. This can be done with a simple depth-first search through the list, which has a complexity <code>O(V lg V)</code>. During the search phase, the deeper node (if there is one) is first moved to the same depth as the shallower node. From this point, the depth is binary-searched for the shallowest depth at which the ancestors of <code>X</code> and <code>Y</code> are still unequal. This is done by only updating the nodes upwards when ancestors are unequal. Moving upwards by one more gives the lowest common ancestor. It is easy to see that the efficiency of search is now only <code>O(lg V)</code>, which should be much faster than the naive approach.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+from pwn import *
+
+p = remote("chal.imaginaryctf.org", 42013)
+
+
+# binary tree primitive
+class Node(object):
+    def __init__(self, i, l = None, r = None, p = None):
+        self.i = i
+        self.l = l
+        self.r = r
+        if p is None:
+            self.p = []
+            self.d = 0
+        else:
+            self.p = [p]
+            if p.p is not None:
+                self.p += p.p
+
+            self.d = p.d + 1
+
+        return
+
+    def setl(self, l = None):
+        self.l = l
+        return
+
+    def setr(self, r = None):
+        self.r = r
+        return
+
+    def setp(self, p):
+        assert isinstance(p, Node)
+        self.p = [p]
+        if p.p is not None:
+            self.p += p.p
+
+        self.d = p.d + 1
+        return
+
+
+def dfs(n):
+    if n.l is not None:
+        n.l.setp(n)
+        dfs(n.l)
+
+    if n.r is not None:
+        n.r.setp(n)
+        dfs(n.r)
+
+    return
+
+# returns path (list of node ids) from node a to node b in the binary tree
+# or None if no such path exists
+def getPath(a, b):
+    if a is None or b is None:
+        return None
+
+    if a == b:
+        return [a.i]
+
+    '''
+    lRoute = getPath(a.l, b)
+    rRoute = getPath(a.r, b)
+    if lRoute is None and rRoute is None:
+        return None
+
+    if lRoute:
+        assert rRoute is None
+        return [a.i] + lRoute
+
+    assert lRoute is None
+    return [a.i] + rRoute
+    '''
+    route = getPath(a.l, b)
+    if route is None:
+        route = getPath(a.r, b)
+        if route is None:
+            return None
+
+    return [a.i] + route
+
+# returns the id of the lowest common ancestor of two nodes a and b in a binary tree with root r
+# or None if the nodes do not share any ancestor up to r
+def lca(r, a, b):
+    patha = getPath(r, a)
+    pathb = getPath(r, b)
+    if patha is None or pathb is None:
+        return None
+
+    assert patha[0] == r.i and pathb[0] == r.i
+    for i, (pathaa, pathba) in enumerate(zip(patha, pathb)):
+        if pathaa != pathba:
+            return patha[i - 1]
+
+    # if we get here, a or b is a direct ancestor of the other
+    if len(patha) > len(pathb):
+        return b.i
+
+    return a.i
+
+# O(log(N)) lca algorithm - binary lifting
+def lca_fast(a, b, maxlevels = 14):
+    if (a.d < b.d):
+        a, b = b, a
+
+    diff = a.d - b.d
+    for i in reversed(range(maxlevels)):
+        if diff & (1 << i):
+            a = a.p[(1 << i) - 1]
+
+    if a == b:
+        return b
+
+    for i in reversed(range(maxlevels)):
+        if len(a.p) < (1 << i) or len(b.p) < (1 << i):
+            continue
+
+        if a.p[(1 << i) - 1] != b.p[(1 << i) - 1]:
+            a = a.p[(1 << i) - 1]
+            b = b.p[(1 << i) - 1]
+
+    return a.p[0]
+
+def lcg64_Knuth(seed):
+    return (1 + 0x5851F42D4C957F2D * seed) % (1 << 64)
+
+# test tree
+'''
+testTree = []
+for i in range(5):
+    testTree.append(Node(i))
+
+testTree[3].setl(testTree[2])
+testTree[3].setr(testTree[0])
+testTree[4].setl(testTree[1])
+testTree[4].setr(testTree[3])
+dfs(testTree[4])
+assert getPath(testTree[4], testTree[1]) == [4, 1]
+assert getPath(testTree[4], testTree[2]) == [4, 3, 2]
+assert lca_fast(testTree[1], testTree[2]).i == 4
+assert lca_fast(testTree[2], testTree[0]).i == 3
+assert lca_fast(testTree[1], testTree[3]).i == 4
+assert lca_fast(testTree[3], testTree[2]).i == 3
+'''
+
+# get the seed
+#'''
+seed = int(p.recvline().strip().split()[-1])
+log.info("Seed: %s" % (hex(seed)))
+
+# generate binary tree based on seed
+treel = []
+for i in range(500001):
+    treel.append(Node(i))
+
+k = 0
+for j in range(250001, 500001):
+    seed = lcg64_Knuth(seed)
+    v = k + seed % (j - k)
+    # swap
+    treel[k], treel[v] = treel[v], treel[k]
+    seed = lcg64_Knuth(seed)
+    v = (k + 1) + seed % (j - (k + 1))
+    # swap
+    treel[k + 1], treel[v] = treel[v], treel[k + 1]
+    # update nodes
+    treel[j].l = treel[k]
+    treel[j].r = treel[k + 1]
+    k += 2
+
+# hashmap to speed up the lookup
+lookup = {}
+for i in range(500001):
+    lookup[treel[i].i] = i
+
+# set up depths and parent lists
+dfs(treel[lookup[500000]])
+
+# ready
+p.recvuntil(b"? ")
+p.sendline(b"42")
+
+prompts = []
+for i in range(50000):
+    prompts.append([int(a) for a in p.recvline().strip().split()])
+
+assert p.recvuntil(b"? ") == b"Answers? "
+#getNode = lambda i: next((n for n in treel if n.i == i), None)
+#root = getNode(500000)
+for i in range(50000):
+    if i and not i % 10:
+        log.info("Progress: %0.2f%% (%d / 50000)" % (100 * i / 50000, i))
+
+#    a = getNode(prompts[i][0])
+#    b = getNode(prompts[i][1])
+    root, a, b = treel[lookup[500000]], treel[lookup[prompts[i][0]]], treel[lookup[prompts[i][1]]]
+#    p.sendline(bytes(str(lca(root, a, b)), "utf-8"))
+    p.sendline(bytes(str(lca_fast(a, b).i), "utf-8"))
+
+p.interactive()
+p.close()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>ictf{I_can_f1n4lly_see_the_forest_through_the_tr33s}</code></p>

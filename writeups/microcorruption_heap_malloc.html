@@ -1,0 +1,39 @@
+<!--Add date: 09/01/2020-->
+
+<h1>LockIt: A Fast, Simple Memory Allocator</h1>
+
+<h2>Reverse Engineering Demonstration</h2>
+
+<h3>Demo by YR81</h3>
+
+<p><a href = "https://microcorruption.com" target = "_blank">Microcorruption</a> is a series of online challenges focused on securing embedded systems. The hardware, referred to as LockIt Pro, is an MSP430-based microcontroller interfaced with some peripheral devices that service interrupts. The goal of many challenges is to unlock the keypad which the microcontroller secures without knowing the actual password. The MSP430 is a popular controller from Texas Instruments that is not only used for embedded systems but also for controller applications in general - it is often viewed as a more versatile and customizable version of the more popular Arduino controller.</p>
+
+<p>In this post, we will reverse engineer the primitive <code>malloc</code> and <code>free</code> procedures implemented for the LockIt Pro. The library code is first visible in the Algiers challenge. Our first task will be to dump the library code. We cannot directly dump memory as a binary on the webpage; however, we are given a textual representation of the memory state. So, we can use a simple Python script to extract the desired addresses. Since we only care about the memory management functions, we only need to dump a few memory locations (~300 bytes) starting at <code>0x4464</code> (we dump starting at <code>0x4460</code> just to make alignment a bit easier).</p>
+
+<p>Now that we have the memory dump, we can load the binary into IDA. Make sure to change the processor type to <code>Texas Instruments MSP430 [msp430]</code> for automatic analysis (sorry free users, this is only available in the full version of IDA). Next, we get a prompt about the memory mapping of ROM and RAM. Although these may not correlate with the actual memory map of the device (indeed, it is possible for ROM and RAM to be interspersed, or for there to exist other memories such as Flash), it is useful for interpreting the disassembly. We know that code begins at <code>0x4400</code>, so let's start the ROM at <code>0x4000</code>. The code section of interest appears to extend to <code>0x4570</code>, so a ROM size of <code>0x2000</code> should suffice. RAM should contain other mapped memory. A priori, we do not know what "other" addresses are used (specifically, for the heap that is implemented here). However, upon quick inspection, we can liberally give <code>0x2000</code> bytes of RAM staring at <code>0x2000</code>. It's important that the two mappings do not overlap! A snapshot of the settings I am using is given below.</p>
+
+<img src = "./images/microcorruption_heap_malloc_1.png" class = "small" />
+
+<p class = "caption">Figure 1. IDA Pro import settings</p>
+
+<p> IDA's initial autoanalysis will do little to interpret the binary, but because we know it is code, we can easily spam the <code>C</code> key on everything. Eventually, everything will be code, and pressing <code>P</code> on the addresses of <code>malloc</code> (<code>0x4464</code>) and <code>free</code> (<code>0x4508</code>), we get the disassembly graphs we desire.</p>
+
+<p>Let's start with <code>malloc</code>.</p>
+
+<h4>Understanding <code>malloc</code></h4>
+
+<p>Below is the disassembly graph for <code>malloc</code>.</p>
+
+<img src = "./images/microcorruption_heap_malloc_2.png" class = "small" />
+
+<p class = "caption">Figure 2. Memory allocate procedure graph.</p>
+
+<p>Starting at the top, we see a push of R11. This is just saving that register, as can be verified at the bottom of the disassembly, right before the return.</p>
+
+<p>Next, we test the byte at offset <code>0x2404</code>. This is an address in RAM, but we are not sure what it exactly is yet. Depending on whether that byte is zero or not, we take one of two possible execution paths. If it is NOT zero, then we perform additional actions. Specifically, we move the word located at <code>0x2400</code> into R14. That value is moved into the <i>address</i> referenced by R13, as well as the word above that. Then, we move the word located at <code>0x2402</code> into R13 and add <code>0xfffa</code> to it. In 2's complement signed values, this is equivalent to subtracting 6. The result is moved to <code>0x2404</code>. Finally, we clear the byte at <code>0x2404</code>. These operations seem quite random, but we can begin to make some sense of it. In particular, we note that 6 is the number of bytes that was written by this block (3 words), which was <i>subtracted</i> from the value at <code>0x2404</code>. Perhaps this represents the size of the heap? Additionally, whatever is in address <code>0x2400</code> will be a memory address that points to itself. The word just above it in memory points to the same location. If we interpret this as a node in a doubly-linked list (a common heap structure), then it would be an isolated node. From this information, we can deduce that this block initializes a heap, where the pointer to the start of the heap is </p>
+
+<p>Moving on in the disassembly, we see that the pointer at address <code>0x2400</code> is moved to R11, which is then moved to R14. From the previous analysis we see that R11 holds the address of the beginning of the heap. The word at R14 + 4 is tested for its least significant bit. If it is set, R13 gets the value of R14, and R14 is updated with the word located at R14 + 2. If R13 is not below R14, then we go to the bottom right block, which actually prints out a message saying that the heap is exhausted, then exits. Otherwise, we compare R11 (heap head) with R14. If R14 is equal to the head of the heap, then we also exit with error. Otherwise, we loop with the new R14 as the chunk. From this, we can conclude that chunks in this heap have 3 words of metadata: something at offset 0, a "forward" pointer at offset 2 that points to the next available chunk, and a bit at offset 4 that tells whether or not we should go to the next chunk (i.e., an "in-use" bit).</p>
+
+<p>Next, we take the size from R13 and perform a right-rotate by one (basically dividing by 2). This would convert a size in bytes to the equivalent size in words (if the size is even; otherwise, we lose a byte). This is compared with the requested size, presumably also in words. If less than, we return to the iteration over the linked list (discussed previously). Otherwise, we have found a valid and unused chunk that has a size greater than or equal to our requested size, and we can use it to service a request.</p>
+
+<p>The request size is added to 6 and compared once again to the chunk size. If the request size plus 6 is less than the chunk size, then the chunk is broken into two, the remainder being used to serve a future request. Notice that this fixes the minimum possible chunk data size to 3 words (overall chunk size, metadata + data, to 6 words). We now need to create a new chunk within the chunk; this is done by first setting the size of the original chunk to the request size with LSB "in-use" set. </p>

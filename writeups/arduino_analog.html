@@ -1,0 +1,124 @@
+<!--Add date: 08/18/2022-->
+
+<h1>Analog Reads and Writes on AVR Microcontrollers</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>How do the AVR microcontrollers implement analog reads and writes, being a fully digital device? To test this, we will analyze the following short program:</p>
+
+<pre class = "c">
+void setup() {
+    float x;
+    pinMode(3, OUTPUT);
+    pinMode(15, INPUT);
+    analogWrite(14, 64);
+    x = analogRead(15);
+
+    return;
+}
+
+void loop() {
+// put your main code here, to run repeatedly:
+
+}
+</pre>
+
+<p>For analysis of the pre-<code>setup()</code> configuration, see the writeup on <a href = "#arduino_random">reversing the Arduino RNG</a>.</p>
+
+<p>To use a particular pin as input or output, it must be configured as such. This is done by calling <code>PinMode()</code> with the first argument set to the pin number and the second argument denoting whether that pin is supposed to be an input (readable) or an output (writable).</p>
+
+<p>In the compilation of the above source, we first call <code>PinMode(3, OUTPUT);</code>, which is faithfully translated to the binary. We now take a closer look at what this function does.</p>
+
+<h5>Analysis of <code>PinMode()</code></h5>
+
+<p>The function begins by subtracting <code>0xff70</code> from the port number, which has the same effect as adding <code>0x90</code>. The program memory at this address is read. This implies the existence of an array at word address <code>0x90 >> 1 = 0x48</code>, which we confirm to be <code>digital_pin_to_bit_mask_PGM</code>. So, this operation is getting the bit location of the <i>Arduino pin</i> within the <i>AVR port</i>.</p>
+
+<pre>
+    digital_pin_to_bit_mask_PGM:.dw 0x201, 0x804, 0x2010, 0x8040
+    .dw 0x201, 0x804, 0x2010, 0x201
+    .dw 0x804, 0x2010
+</pre>
+
+<p>Pin 3 on the Arduino Nano is bit 3 of the corresponding port, which is stored in <code>r18</code>. Next, the function subtracts <code>0xff84</code> from the port number, which is the same as adding <code>0x7c</code>. This implies that there is an array at word address <code>0x7c >> 1 = 0x3e</code>. Indeed, this is the <code>digital_pin_to_port_PGM</code> array. This operation is getting the <i>AVR port</i> of the pin.</p>
+
+<pre>
+    digital_pin_to_port_PGM:.dw 0x404, 0x404, 0x404, 0x404
+    .dw 0x202, 0x202, 0x202, 0x303
+    .dw 0x303, 0x303
+</pre>
+
+<p>Pin 3 of the Arduino Nano is therefore on Port 4, or D. This is stored in <code>r24</code>. This information agrees with what is listed in the port documentation.</p>
+
+<img class = "small" src = "./images/arduino_analog_1.png"/>
+
+<p>If the port is (for whatever reason) zero, the function prompty returns. Otherwise, the port is doubled via a left shift, then indexed within an array at word address <code>0x68 >> 1 = 0x34</code>. IDA unfortunately hides the name of this array because it is <code>__trampolines_end</code>, but we can find it in the string table of the ELF file: <code>port_to_mode_PGM</code>. The port is also indexed into another array: <code>port_to_output_PGM</code>. These are stored in <code>Y = r29:r28</code> and <code>X = r27:r26</code>, respectively.</p>
+
+<pre>
+    ; public __trampolines_end
+    port_to_mode_PGM:.dw 0, 0, 0x24, 0x27, 0x2A
+    port_to_output_PGM:.dw 0, 0, 0x25, 0x28, 0x2B
+</pre>
+
+<p>Now, the second argument to the function, defining the direction of the pin, is read. It is compared to <code>r1 = 0</code>. If equal, we follow the leftmost branch in the above. If equal to <code>2</code>, the middle branch is taken. Otherwise, the rightmost branch is taken. We analyze each one in turn.</p>
+
+<img class = "small" src = "./images/arduino_analog_2.png"/>
+
+<h6>PINMODE = 0</h6>
+
+<p>In this branch, the status register is saved in <code>r25</code>, and global interrupts are disabled. The value in the mode register addressed by <code>Y</code> is loaded into <code>r24</code> and local ANDed with the inverse of the bitmask in <code>r18</code>, corresponding to the bit within the port. This has the effect of setting the specified bit in the Data Direction Register (DDR) to write. The inverse bitmask is also used to clear the bit in the corresponding output register, effectively writing a logical low to the pin. The status register is then restored.</p>
+
+<h6>PINMODE = 2</h6>
+
+<p>This branch is quite similar to the previous. The only difference is that instead of clearing the pin's bit in the port output register, the bit is set. According to the AVR microprocessor documentation, this enables the internal <i>pull-up resistor</i> for that input. This could be useful to prevent random voltage readings if the pin is left floating.</p>
+
+<img src = "./images/arduino_analog_3.png"/>
+
+<h6>PINMODE = 1 or Otherwise</h6>
+
+<p>In the final branch, the mode register bit is set. This configures the pin as an output.</p>
+
+<p>After the registers are set, the function returns.</p>
+
+<h5>Analysis of <code>analogWrite()</code></h5>
+
+<p>The next functionality we analyze is analog writing. It turns out that the function was inlined by the compiler. Even though <code>pinMode()</code> was already called, it is called once again before the pin is read.</p>
+
+<p>Just as in the <code>pinMode()</code> function, an attributes of the specified pin is obtained: the "timer" via the <code>digital_pin_to_timer_PGM</code> array:</p>
+
+<pre>
+    digital_pin_to_timer_PGM:.dw 0, 0x800, 0x200, 1
+    .dw 0x300, 0x704, 0, 0
+    .dw 0, 0
+</pre>
+
+<p>In this case, pin 3 is 8. The value is saved in <code>r30</code>. There is a large branch depending on the value of the timer. As can be seen in the <code>digital_pin_to_timer_PGM</code> array, there are six distinct timer values, and these directly correspond to the six available PWM outputs. In fact, the precise mappings of timers to output compare signals (<code>OCnx</code>) is given in the hardware documentation:</p>
+
+<img src = "./images/arduino_analog_4.png"/>
+
+<p><a href = "#arduino_random">Recall</a> that Timer 0 was configured to a fast PWM, which counts up from <code>0x00</code> to <code>0xff</code>. When the timer value becomes equal to the value in <code>OCR0x</code> (<code>x = A, B</code>), the non-inverted output compare signal drops low and remains low until the timer resets to <code>0x00</code>, when it goes high again until the next compare match. Timers 1 and 2 operate slightly differently; they use <i>phase-correct</i> counters. Instead of only counting upwards, they switch counting direction upon reaching <code>BOTTOM</code> or <code>TOP</code>. If the compare matches on the <i>incrementing count</i>, then the output compare signal <i>goes low</i>. If the compare matches on the <i>decrementing count</i>, then the output compare signal <i>goes high</i>.</p>
+
+<p>There are two parameters that can be used to fully specify a PWM signal - the <i>frequency</i> and the <i>duty cycle</i>. The frequency is self-explanatory. Since each timer was configured with a prescale of <code>64</code>, the rate at which the timers are incremented is <code>16 MHz / 64 = 250 kHz</code>. Timer 0 is reset every <code>256</code> increments. Therefore, the PWM frequency is <code>250 kHz / 256</code>, or about <code>977 Hz</code>. In contrast, the period of Timers 1 and 2 are <i>510</i>. (It is not <code>2 * 256 = 512</code> because the extreme values are not repeated.) Therefore, the PWM frequency on the corresponding pins are only <code>250 kHz / 510</code>, or about <code>490 Hz</code>.</p>
+
+<p>The <i>duty cycle</i> is the proportion of time when the output is high. It is a function of the output compare register value. For Timer 0, the duty cycle is <code>(N + 1) / 256</code>, where <code>N</code> is the compare register value. This is because the output is high whenever the counter is <i>less than or equal to <code>N</code></i> and low otherwise. Note that the minimum possible duty cycle is <code>1 / 256</code>; i.e., a duty cycle of <code>0</code> cannot be implemented on a non-inverting fast PWM. When <code>N = 255</code>, the duty cycle is unity and equivalent to a digital write high. For Timers 1 and 2, the duty cycle is <code>N / 255</code>. This is because the output is high when the counter is (1) <i>less than <code>N</code></i> on the upcount or (2) <i>less than or equal to <code>N</code></i> on the downcount, for a total of <code>2 N</code> out of <code>510 = 2 * 255</code> cycles.</p>
+
+<img src = "./images/arduino_analog_5.png"/>
+
+<p>Returning to the code, if the value within <code>digital_pin_to_timer_PGM</code> is invalid (i.e., no PWM exists for that pin), a digital low is written to the pin. This is likely because we used <code>64</code> as the pulse width argument, which is less than half of <code>256</code>. If the argument were larger than half, the function would likely write a digital high to the pin.</p>
+
+<h5>Analysis of <code>analogRead()</code></h5>
+
+<p>The final step we would like to analyze is how the Arduino implements analog reads. This turns out to be far simpler than analog write. The function was also inlined and is shown below.</p>
+
+<img class = "small" src = "./images/arduino_analog_6.png"/>
+
+<p>The <code>ADMUX</code> register is configured to use the <code>AVCC</code> reference (with capacitor at <code>AREF</code>), and the channel is <code>ADC1</code>, which corresponds to Pin 15 as seen in the above hardware diagrams. Then, bit 6 of <code>ADCSRA</code> is set, which starts the ADC conversion. This bit remains set by the microcontroller until the conversion is complete, which is why it is continuously polled in a loop. When the results are ready, they are stored in the <code>ADCH:ADCL</code> register pair, where they may be read. Since our program did not make use of the result, both halves of the result were simply read into <code>r24</code>.</p>
+
+<p>The ATmega328P has 10 bits of ADC precision, which means that it can differentiate voltage differences that is <code>1 / 1024</code> times the reference voltage. This is why the result requires two registers; in fact, the leftover 6 bits are left unused.</p>
+
+<h4>Remarks</h4>
+
+<p>Arduino has no intrinsic analog capabilities; all analog features require a digital-to-analog conversion. In the case of analog output, <i>pulse-width modulation (PWM)</i> is used to simulate an analog level by controlling the duty cycle. For analog input, built-in <i>analog-to-digital conversion (ADC)</i> functionality is available.</p>

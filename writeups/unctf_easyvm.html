@@ -1,0 +1,133 @@
+<!--Solve date: 01/14/2021-->
+
+<h1>UNCTF - EasyVM</h1>
+
+<h2>Referred from World of Attack and Defense</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>General Comments</h4>
+
+<p>As the name of the challenge suggests, there is probably a VM we need to find in this challenge. Running the binary, we see that it is a flag checker:</p>
+
+<img class = "small" src = "./images/unctf_easyvm1.png"/>
+
+<p>Opening the binary in IDA and navigating to <code>main()</code>, we find initialization of a structure, where the first qword (qword being 8 bytes) is set to the address of a list of function pointers. A second qword is initialized to NULL. Three byte fields, a dword field, and two more qword fields are set to NULL.</p>
+
+<img class = "small" src = "./images/unctf_easyvm2.png"/>
+
+<p>In the context of VMs, such a structure somewhat reminds me of a set of registers, and perhaps the list of function pointers is just a set of instructions the VM supports.</p>
+
+<p>Following initialization of the structure, we see what appears to be a call to the first function in the list of function pointers. The arguments passed during this call are the initialized structure (let's call it <code>object</code>), two arrays of numbers, and the user input (which we learn is supposed to be 32 bytes in length).</p>
+
+<img class = "small" src = "./images/unctf_easyvm3.png"/>
+
+<p>Jumping into the function, we set <code>object[1]</code> to 9 above the address of the address of the first array argument (<code>listA</code>). We set <code>object[3]</code> to the address of the second array argument (<code>listB</code>). Then, <code>object[4]</code> is set to the user input.</p>
+
+<p>We then enter a loop. The loop is essentially just a switch-case with 16 non-default cases and a default case that simply prints <code>"cmd execute error"</code> and returns 0 (indicating a bad flag). The switch is based on the value of <code>object[1] - 0xa0</code>. Recall that <code>object[1]</code> was set to <code>listA + 9</code>. Taking a closer look at <code>listA</code>, we find that it is just an array of 16 values ranging from <code>0xa0</code> to <code>0xaf</code>. Based on the disassembly of the jumptable targets, we see that in each case except <code>0xae, 0xaf</code>, we "execute" the corresponding "instruction" in the list of pointers in <code>object[0]</code>. For some cases, namely, <code>0xa2, 0xa3, 0xa4, 0xa6, 0xa7, 0xae, 0xaf</code>, the value at <code>object[1]</code> is potentially modified. Since the switch is based on that value, we can deduce that <code>object[1]</code> acts more or less like a program counter.</p>
+
+<p>In the cases of <code>0xae, 0xaf</code>, the dword at <code>object + 0x14</code> is checked. For <code>0xae</code>, if that value is nonzero, then the checker returns 0; otherwise, the program counter is lowered by 12 (after which is should be <code>0xa2</code>). For <code>0xaf</code>, if <code>(dword *) (object + 0x14)</code> is equal to 1, the checker returns 1 (indicating a correct flag); otherwise, the program counter is lowered by 6 (to <code>0xa9</code>).</p>
+
+<img class = "small" src = "./images/unctf_easyvm4.png"/>
+
+<p class = "caption">Switch-case structure implemented for the VM program loop.</p>
+
+<p>At this point, we can simply reverse the functionalities of the 14 other values of the program counter (PC). They are tabulated below. To simplify notation, <code>r1, r2, r3</code> represent the three byte fields in <code>object</code>; they behave similarly to registers.</p>
+
+<table>
+    <tr>
+        <th>PC</th>
+        <th>Instruction</th>
+    </tr>
+    <tr>
+        <td><code>0xa0</code></td>
+        <td><code>inc r1</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa1</code></td>
+        <td><code>inc r2</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa2</code></td>
+        <td><code>inc r3</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa3</code></td>
+        <td><code>sub r1, r3</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa4</code></td>
+        <td><code>xor r1, r2</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa5</code></td>
+        <td><code>xor r2, r1</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa6</code></td>
+        <td><code>mov r1, 0xcd</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa7</code></td>
+        <td><code>mov r2, r1</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa8</code></td>
+        <td><code>mov r3, 0xcd</code></td>
+    </tr>
+    <tr>
+        <td><code>0xa9</code></td>
+        <td><code>mov r1, [object[4] + r3]</code></td>
+    </tr>
+    <tr>
+        <td><code>0xaa</code></td>
+        <td><code>mov r2, [object[4] + r3]</code></td>
+    </tr>
+    <tr>
+        <td><code>0xab</code></td>
+        <td><code>mov (dword *) (object + 0x14), (r1 != [object[3] + r3])</code></td>
+    </tr>
+    <tr>
+        <td><code>0xac</code></td>
+        <td><code>mov (dword *) (object + 0x14), (r2 != [object[3] + r3])</code></td>
+    </tr>
+    <tr>
+        <td><code>0xad</code></td>
+        <td><code>mov (dword *) (object + 0x14), (r3 > 31)</code></td>
+    </tr>
+</table>
+
+<p>Now, let's take a look at the actual program flow. From the above, we know that the program starts with <code>PC = 0xa9</code>. Following the changes to PC and substituting instructions from the table above, the "disassembled" VM instructions are</p>
+
+<pre>
+mov r1, [object[4] + r3]
+sub r1, r3
+xor r2, r1
+mov r1, 0xcd
+xor r1, r2
+mov (dword *) (object + 0x14), (r1 != [object[3] + r3])
+mov r2, r1
+[0xae]
+inc r3
+mov (dword *) (object + 0x14), (r3 > 31)
+[0xaf]
+</pre>
+
+<p>As discussed above, if <code>[0xaf]</code> does not return, then it will jump back to <code>0xa9</code>, which is exactly the entry point. So, the entire program is just a loop. We can clearly see that <code>r3</code> serves as an indexing value. Recall that <code>object[4]</code> is the user input and <code>object[3]</code> is <code>listB</code> that was passed to the VM function.</p>
+
+<p>The value of <code>r1</code> at the point of comparison with the byte in <code>object[3]</code> is <code>r1 ^ 0xcd ^ ([object[4] + r3] - r3)</code>, where <code>r1</code> is the value of <code>r1</code> at the time of comparison during the previous loop (initially we take it to be 0). We can write a Python script to solve for the correct flag:</p>
+
+<pre class = "python">
+object3 = idaapi.get_many_bytes(0x6020a0, 32)
+flag = ''
+x = 0
+for i in range(32):
+    flag += chr((ord(object3[i]) ^ x ^ 0xcd) + i)
+    x = ord(object3[i])
+</pre>
+
+<p>Running the script in IDA, we get <code>942a4115be2359ffd675fa6338ba23b6</code>. Of course, we also have to wrap it into the flag format.</p>
+
+<h4>Flag</h4>
+
+<p><code>UNCTF{942a4115be2359ffd675fa6338ba23b6}</code></p>

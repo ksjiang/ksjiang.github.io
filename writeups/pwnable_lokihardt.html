@@ -1,0 +1,15 @@
+<!--Solve date: -->
+
+<h1>pwnable.kr - Lokihardt</h1>
+
+<h2>Grotesque - 300 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Overview</h4>
+
+<p>This is a heap exploitation challenge where the source is provided. We are given a menu with 5 options: (1) allocate, (2) delete, (3) use, (4) garbage collect, and (5) spray the heap. We are given a hint that this challenge is related to Lokihardt's exploitation of Microsoft Edge. Lokihardt is the pseudonym of a South Korean security researcher who supposedly exploited Microsoft Edge at a hacking competition in only a few seconds.</p>
+
+<p>The context for Lokihardt's attack can be found in a BlackHat presentation <a href = "https://www.blackhat.com/docs/us-16/materials/us-16-Molinyawe-Shell-On-Earth-From-Browser-To-System-Compromise.pdf" target = "_blank">$hell on Earth</a> about browser exploits. Slides 54-61 gives an in-depth description of the vulnerability and exploit. The vulnerability is in the Javascript, where a certain variable (<code>subItem</code>) could be uninitialized if <code>HasItem()</code> succeeds but <code>GetItem()</code> fails. By using a "misaligned reference", the bug can be exploited to achieve a memory leak.</p>
+
+<p>For this particular challenge, option 1 allows us to allocate an object. The <code>refCount</code> is checked against 0, and if it is 0, then we first create a random padding on the heap, then create the actual object. The object consists of a 256-byte array of read data, a pointer to a write buffer, the length (of the write data buffer), and the type of the array object. The type is set to <code>"null"</code> for array buffers obtained normally. Looking at the procedure for option 3 (use), we see that it is only possible to read or write using the object if the type is either <code>"read"</code> or <code>"write"</code>, respectively. Our first task, then, is to fake a chunk that has these permissions.</p>

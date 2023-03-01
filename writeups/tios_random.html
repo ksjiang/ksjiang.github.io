@@ -1,0 +1,231 @@
+<!--Add date: 01/06/2022-->
+
+<h1>TI-OS Random Number Generation Algorithm</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<h4>Introduction</h4>
+
+<p>Arguably the most popular class of graphing calculators on the market today is the Texas Instruments TI-83+ Series. It includes the TI-83+ along with the immensely well-accepted TI-84+(SE) and more recently the TI-84+C(E), which are color versions of the devices. These calculators all run on what will be referred to here as TI-OS, a mostly open-documented [1] body of Z80 code that enables all of the core math and programming functionality of the system, from trigonometric operators to graphing utilities. One of the functionalities that these calculators provide is a floating-point random number generator (RNG) that produces uniformly-distributed real numbers between 0.0 and 1.0. Interestingly, there is no documented functionality for generating random <i>integers</i>. While the outward-facing interface of TI-OS does yield the ability to generate random integers in a specified range, it is derived through a scaling and rounding of the OS's fundamental float RNG.</p>
+
+<p>In this writeup, we investigate the internals of the TI-OS float RNG, which can inform the quality of the generator and whether it can be safely used in secure cryptographic protocols or whether it is perhaps only useful as a happy statistics classroom dieroll simulator.</p>
+
+<h4>Low-Level Analysis</h4>
+
+<h5>Locating the System Routines</h5>
+
+<p>The TI-OS float RNG can be accessed through a <code>BCALL</code>, a TI-OS macro that essentially expands to <code>RST 28h</code> followed by one word parameter that specifies the page and offset of the system routine address. Basically all TI-OS system routines have the second-highest bit of the parameter set, which indicates that the address is located on page 123, as shown in the <code>BCALL</code> dispatcher in Figure 1 below.</p>
+
+<img src = "./images/tios_random_1.png"/>
+
+<p class = "caption">Figure 1. A section of TI-OS's system routine dispatcher, showing how the address of the entry point is parsed from the <code>BCALL</code> parameter.</p>
+
+<p>The system routine arguments for the functions related to random number generation can be found in the calculator's include file provided by Texas Instruments. For the TI-84+, the parameters are as follows:</p>
+
+<pre class = "asm">
+_RandInit	EQU 4B7Fh
+_Random		EQU 4B79h
+...
+_StoRand	EQU 4B7Ch
+</pre>
+
+<p>All of these system routines have Bit 6 set, indicating that the address of the system routines can be found on page 123. Using IDA, we can map this page starting at ROM address <code>0x4000</code> and directly navigate to the addresses in the include file. As shown in Figure 2 below, all routines are on page <code>0x76 = 118</code>. <code>Random</code> is located at offset <code>0x3dc9</code>, <code>RandomInit</code> is located at offset <code>0x3e8a</code>, and <code>StoRand</code> is located at offset <code>0x3e06</code>.</p>
+
+<img class = "small" src = "./images/tios_random_2.png"/>
+
+<p class = "caption">Figure 2. Offsets of the system routines.</p>
+
+<p>We now take a closer look at these functions to determine how the random number generator works.</p>
+
+<h5><code>Random</code> Analysis</h5>
+
+<p>The function begins by loading <code>DE</code> with the address of the random seeds, <code>0x9640</code>, then branching to <code>0x7e3d</code>. The disassembly at <code>0x7e3d</code> calculates updated values for the seeds and is depicted in Figure 3 below. First, <code>OP2</code> (address <code>0x8483</code>) is set to the floating point number <code>0084536680... -> 53668</code> by copying the first five bytes from the page and zeroing the remaining four. Next, there is a <code>RST 0x20</code> instruction executed with <code>HL</code> pointing to the first random seed. Reversing the handler at <code>0x20</code> (page 0) reveals that this simply copies the first random seed to <code>OP1</code> (address <code>0x8478</code>). The code then branches to <code>0x2541</code> (page 0). This is a rather substantial function and is not documented by TI, so we take a small detour here to reverse it.</p>
+
+<img class = "small" src = "./images/tios_random_3.png"/>
+
+<p class = "caption">Figure 3. Procedure to update the seeds. Detailed descriptions for the instructions can be found in Table 1.</p>
+
+<p>The function begins by resetting bit 6 of TI-OS flag byte 14. (It's unclear what this does at the moment, as flag byte 14 is nowhere to be found in the documentation and include files.) The last two bytes of <code>OP1</code> and <code>OP2</code> are then cleared. These are the "guard" digits, which serve as extra precision for operations (but should not be relied upon when supplying input). Then, the byte at <code>0x8485</code>, which contains the two leading digits of the mantissa of <code>OP1</code>, is checked and the zero flag set accordingly. If the number is valid, the same check is performed for <code>OP2</code>.</p>
+
+<p>Following the check on the mantissa, the code then operates on the exponents. First, the exponent of <code>OP2</code> is negated via a <code>CPL; INC A</code> operation. The result is stored in <code>D</code>. The exponent of <code>OP1</code> is loaded into <code>A</code>, then <code>D</code> is added to <code>A</code>. In the end, <code>A</code> contains the <i>difference</i> between the exponents. The operation is then checked for over/under flow, with the appropriate actions taken in either case. The signs of the two operands are XORed together, and the sign and exponent of <code>OP3</code> is initialized to these results.</p>
+
+<p><i>What do these observations suggest about what this function does?</i> We know that among the various basic floating point operations, the sign of the result can only be determined from the signs of the operands for multiplication and division. And since the exponent of the result appears to be related to the difference between the exponents of the operands, this function is likely implementing <b>floating point division</b>. We can verify whether this is the case in one of two ways: (1) carefully reverse the rest of the function, or (2) see whether the OS internal <code>FPDiv</code> system routine references this function. The latter option is clearly much faster. From the include file:</p>
+
+<pre class = "asm">
+_FPDiv		EQU 4099h
+</pre>
+
+<p>and checking within page 123, we indeed find that <code>0x2541</code> on page 0 implements floating-point division. In fact, we can do this for all the floating point operations by <i>searching</i> page 123 for the branch target and cross-referencing the include file.</p>
+
+<p>Back in <code>Random</code>, we now understand that the random seed is divided by the constant <code>53668</code>, the quotient being stored back into <code>OP1</code>. The code then performs the actions listed in Table 1 below.</p>
+
+<p class = "caption">Table 1. Seed update floating point operations.</p>
+
+<table>
+    <tr>
+        <th><p>Subroutine Address</p></th>
+        <th><p>FP Operation</p></th>
+        <th><p>Comments</p></th>
+    </tr>
+    <tr>
+        <td><p><code>0x1a68</code></p></td>
+        <td><p>Copy <code>OP2</code> (<code>= 53668</code>) into <code>OP5</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x2279</code></p></td>
+        <td><p><i>Truncates</i> the result in <code>OP1</code> and stores it back into <code>OP1</code>.</p></td>
+        <td><p><code>OP1</code> now contains the integer quotient of the seed and <code>53668</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x19ec</code></p></td>
+        <td><p>Copy <code>OP1</code> into <code>OP4</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1a17</code></p></td>
+        <td><p>Restore <code>OP2</code> back from <code>OP5</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x238b</code></p></td>
+        <td><p>Multiply <code>OP1</code> by <code>OP2</code>, storing the result in <code>OP1</code>.</p></td>
+        <td><p><code>OP1</code> is now equal to the largest multiple of <code>53668</code> that is less than or equal to the seed.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1b07</code></p></td>
+        <td><p>Load <code>OP2</code> with the seed.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x227d</code></p></td>
+        <td><p>Subtract <code>OP1</code> from <code>OP2</code> and store the result back into <code>OP1</code>.</p></td>
+        <td><p><code>OP1</code> is now equal to the seed <i>modulo</i> <code>53668</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x7e96</code></p></td>
+        <td><p>Load <code>OP2</code> with the constant <code>40014</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x238b</code></p></td>
+        <td><p>Multiply <code>OP1</code> by <code>OP2</code>, storing the result in <code>OP1</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1a80</code></p></td>
+        <td><p>Copy the result in <code>OP1</code> to <code>OP5</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1a44</code></p></td>
+        <td><p>Move <code>OP4</code> (the integer quotient) into <code>OP1</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x7e96</code></p></td>
+        <td><p>Load <code>OP2</code> with the constant <code>12211</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x238b</code></p></td>
+        <td><p>Multiply <code>OP1</code> by <code>OP2</code>, storing the result in <code>OP1</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1a17</code></p></td>
+        <td><p>Recall the result in <code>OP5</code> into <code>OP2</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x227d</code></p></td>
+        <td><p>Subtract <code>OP1</code> from <code>OP2</code> and store the result back into <code>OP1</code>.</p></td>
+        <td><p>At this point, <code>OP1 = 40014 * (s1 % 53668) - 12211 * (s1 // 53668)</code>.</p></td>
+    </tr>
+    <tr>
+        <td><p><code>0x1de9</code></p></td>
+        <td><p>Compare <code>OP1</code> with <code>0</code>, setting the zero flag accordingly.</p></td>
+    </tr>
+</table>
+
+<p>At this point, if the result is identically <code>0</code> or negative (checked for by the function at <code>0x1e5d</code>), the constant <code>2147483563</code> is added to the final result; otherwise the result is not modified. The result (in <code>OP1</code>) is prompty stored into the seed.</p>
+
+<p>The exact same routine is performed to update the second seed, with different constants: <code>52774</code>, <code>40692</code>, <code>3791</code>, and <code>2147483399</code>, in the respective order.</p>
+
+<p>The (updated) second seed is then subtracted from the (updated) first seed and the result is compared to <code>1</code>. If the difference is strictly less than <code>1</code>, then <code>2147483563 - 1</code> (one less than the correction for the first seed) is added to that difference.</p>
+
+<p>The float that is finally returned is directly proportional to the corrected difference. Specifically, it is <code>(4.656613059555 x 10^(-10)) * (the corrected difference)</code>, which guarantees that the result will be strictly between <code>0.0</code> and <code>1.0</code>.</p>
+
+<h5><code>RandInit</code> Analysis</h5>
+
+<p><code>RandInit</code> turns out to be very simple. As shown in Figure 4 below, it merely consists of 5 instructions. It copies 18 (2 * 9) bytes to set the default seeds <code>s1 = 12345</code> and <code>s2 = 67890</code>, constants at the label <code>sx1</code> marked in the disassembly.</p>
+
+<img class = "small" src = "./images/tios_random_4.png"/>
+
+<p class = "caption">Figure 4. The very short <code>RandInit</code> system routine.</p>
+
+<h5><code>StoRand</code> Analysis</h5>
+
+<p><code>StoRand</code>, shown in Figure 5, is a bit more interesting than <code>RandInit</code> just because it updates the seeds based on an input parameter. First, <code>OP1</code> is checked; it must be real. The register is saved in <code>OP6</code> to be restored at the end of the routine. The exponent is compared against <code>0x88</code>, which corresponds to 8; if larger, the exponent is capped at 8. This means that the largest possible actual seed is <code>10**9 - 1 = 999999999</code>. Then, the sign is cleared, which is essentially taking the absolute value of the seed. Also, the seed is truncated to an integer. If the resulting seed is zero, <code>RandInit</code> is called, seeding the RNG with the default values as discussed previously. Otherwise, <code>s2</code> is initialized with the seed directly, and <code>s1</code> is initialized with the seed updated through the RNG one time.</p>
+
+<img src = "./images/tios_random_5.png"/>
+
+<p class = "caption">Figure 5. Disassembly of the <code>StoRand</code> system routine.</p>
+
+<h4>Implementation Outside of TI-OS</h4>
+
+<p>We have thus concluded the analysis of the random float generator. It can be implemented very simply in Python as follows:</p>
+
+<pre class = "python">
+def ti83p_RandInit():
+    global s1, s2
+    s1 = 12345
+    s2 = 67890
+    return
+
+def ti83p_StoRand(seed = 0):
+    global s1, s2
+    seed = abs(seed)
+    while seed &gt;= 1E9:
+        seed /= 10.0
+
+    seed = int(seed)
+    if seed == 0:
+        ti83p_RandInit()
+
+    s2 = seed
+    s1 = 40014 * (seed % 53668) - 12211 * (seed // 53668)
+    if s1 &lt;= 0: s1 += 2147483563
+    return
+
+def ti83p_Random():
+    global s1, s2
+    s1 = 40014 * (s1 % 53668) - 12211 * (s1 // 53668)
+    if s1 &lt;= 0: s1 += 2147483563
+    s2 = 40692 * (s2 % 52774) - 3791 * (s2 // 52774)
+    if s2 &lt;= 0: s2 += 2147483399
+    Z = s1 - s2
+    if Z &lt; 1: Z += 2147483562
+    return Z * 4.656613059555E-10
+
+</pre>
+
+<p>We can test the implementation by calling <code>ti83p_StoRand(seed)</code> with the desired argument, then repeatedly calling <code>ti83p_Random()</code>.</p>
+
+<pre class = "python">
+ti83p_StoRand(2022)
+for _ in range(5):
+    print(ti83p_Random())
+
+</pre>
+
+<img class = "small" src = "./images/tios_random_6a.gif"/>
+
+<img src = "./images/tios_random_6b.png"/>
+
+<p class = "caption">Figure 6. Seeding the calculator's RNG with <code>2022</code> and generating 5 numbers (a) (running on jsTIfied emulator [2]). Demonstration of the RNG implemented in Python (b), which gives identical outputs.</p>
+
+<h4>Discussion</h4>
+
+<p>The generator is at heart a multiplicative linear congruential generator (LCG). In fact, Googling the constants discovered in the analysis reveals that Texas Instruments did not invent this particular RNG - a nearly identical one has been reported by L'Ecuyer [3]. It is interesting to note that there are some slight deviations with the implementation found in the reference (Figure 3 in [3]); namely, the conditional comparisons <code>IF s1 &lt; 0</code> and <code>IF s2 &lt; 0</code> are strict in the reference, but TI-OS adds the large constant in the case that the seeds are equal to zero as well. Also, the proportionality factor for <code>Z</code> is slightly different - it is higher in TI-OS. This also explains the discrepancy noted in the top answer <a href = "https://stackoverflow.com/questions/32788122/ti-84-plus-random-number-generator-algorithm" target = "_blank">here</a> a while ago: it is not that the floating point results are different, but rather that the constant is slightly off.</p>
+
+<p>We now return to the big question: is the TI-OS RNG secure enough for cryptographic purposes; e.g. as a one-time pad or an IV generator for block ciphers? From our analysis, the answer is clearly <b>no</b>. The seed space is severely limited (1 billion). Whether the seeds can be uniquely or efficiently recovered given a particular output is not clear, but given that the two seeds are correlated, it would seem very likely. Being able to independently set the two seeds would likely improve the quality of the RNG. That said, the algorithm is indeed quite efficient and probably has better randomness properties than a simple individual LCG, so it can be a great asset in performing simple numerical simulations.</p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Texas Instruments, <a href = "https://education.ti.com/en/guidebook/details/en/830D08FF31804AEAA2F03B8F5E89AD14/83psdk" target = "_blank">TI-83+ Developer Manuals</a>.</p></li>
+    <li><p>Mitchell, C. <a href = "https://www.cemetech.net/projects/jstified/" target = "_blank">jsTIfied</a>.</p></li>
+    <li><p>L'Ecuyer, P. <a href = "https://dl.acm.org/doi/pdf/10.1145/62959.62969" target = "_blank">"Efficient and portable combined random number generators"</a> <i>Communications of the ACM</i> <b>1988</b> <i>31</i> (6), 742-751.</p></li>
+</ol>

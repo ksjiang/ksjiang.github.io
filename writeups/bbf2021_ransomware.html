@@ -1,0 +1,64 @@
+<!--Solve date: 01/16/2021-->
+
+<h1>BambooFox CTF 2021 - Ransomware</h1>
+
+<h2>Reverse Engineering [2]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>We are given an encrypted file <code>flag.enc</code> along with a compiled-Python file. From the challenge name, we can deduce that we want to somehow decrypt the flag. We first extract the functionality of the ransomware by using <code>uncompyle6</code> to get the Python script. From the Python script, we learn the encryption algorithm and secrets, after which it is trivial to decrypt the image. After decrypting the image, we realize the file actually contains two images, just concatenated in terms of the data streams. The second image contains the flag.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>The decompiled Python script is as follows:</p>
+
+<pre class = "Python">
+# uncompyle6 version 3.7.3
+# Python bytecode 3.8 (3413)
+# Decompiled from: Python 3.7.5 (default, Nov  7 2019, 10:50:52) 
+# [GCC 8.3.0]
+# Embedded file name: task.py
+# Compiled at: 2021-01-14 09:13:24
+# Size of source mod 2**32: 420 bytes
+(lambda data, key, iv: if len(data) != 0:
+(lambda key, iv, data, AES: open('flag.enc', 'wb').write(AES.new(key, AES.MODE_CBC, iv).encrypt(lambda x: x + b'\x00' * (16 - len(x) % 16)(data))))(data[key:key + 16], data[iv:iv + 16], open('flag.png', 'rb').read(), __import__('Crypto.Cipher.AES').Cipher.AES) # Avoid dead code: lambda fn: __import__('os').remove(fn)('task.py'))(__import__('requests').get('https://ctf.bamboofox.tw/rules').text.encode(), 99, 153)
+</pre>
+
+<p>It's a bunch of anonymous functions. Breaking it down, we find that it performs AES-CBC encryption on the input file <code>flag.png</code> with key and initialization vector (IV) supplied from a data stream. In this case, the data stream is from the body of an HTTP response to one of the pages in the CTF. The key is 16 bytes starting from index 99 within this response and the IV starts at index 153. After obtaining these cryptographic secrets by making our own request to this page (assuming the page has not changed since the file was encrypted), we can decrypt the file. Opening the image, we find the flag is missing:</p>
+
+<img class = "small" src = "./images/bbf2021_ransomware_1.png"/>
+
+<p>But the image file is larger than what would be expected. We can assume there is some extra data hidden in the image. In fact, there is a second image file completely appended to the visible image at offset <code>0xc5672</code> (we can find this with various tools, such as PNG section explorers or <code>binwalk</code>). This second image contains the flag.</p>
+
+<img class = "small" src = "./images/bbf2021_ransomware_2.png"/>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+import requests
+from Crypto.Cipher import AES
+
+stuff = requests.get("https://ctf.bamboofox.tw/rules").text.encode()
+
+key = stuff[99: 99 + 16]
+iv = stuff[153: 153 + 16]
+
+cipher = AES.new(key, AES.MODE_CBC, iv = iv)
+with open("./flag.enc", "rb") as f:
+    with open("./flag.png", "wb") as g:
+        g.write(cipher.decrypt(f.read()))
+
+with open("./flag.png", "rb") as f:
+    with open("./flag2.png", "wb") as g:
+        f.seek(0xc5672)
+        g.write(f.read())
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{345y_l4_h4iy44444444}</code></p>

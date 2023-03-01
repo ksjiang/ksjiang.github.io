@@ -1,0 +1,263 @@
+<!--Solve date: 01/17/2021-->
+
+<h1>BambooFox CTF 2021 - Flag Checker Revenge</h1>
+
+<h2>Reverse Engineering [4]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>From the description, it almost feels like this is another challenge written in Verilog, but we find this isn't the case. Instead, we are given a standard binary that checks the flag in a very brutish manner: each stage checks one or two bytes of the input, then calls another function if the condition is met. There are 500 checks in total. The first check compares the length of the input with 43. We use a finite pushdown automata that accepts the compiled bytes of each stage of the checker and produces an output that can be fed as a solver condition to Z3. After all the conditions are added, Z3 solves the system.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>Let's take a look at a typical stage of the checker:</p>
+
+<img class = "small" src = "./images/bbf2021_flagcheckerrevenge_1.png"/>
+
+<p>The stage is composed of several parts. The first is an entry sequence that sets up the local stack (1). Next, we have a sequence of input array accesses and optional "unary" operations (operations with immediates) on the extracted values (2). We also have optional binary operations if two bytes are extracted, as is the case here. Then, there is a comparison with an immediate that determines the success of the stage. We can access the next stage by following the <code>call</code> branch. While this stage is representative, there are small variations across the stages that requires more careful parsing. Below is a rough sketch of the automata I used to parse stages:</p>
+
+<img class = "small" src = "./images/bbf2021_flagcheckerrevenge_2.jpg"/>
+
+<p>When parsing each stage, the indices, immediate values, and operations are recorded. After the stage is traversed, these values are used to form a constraint in the Z3 model.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+from struct import *
+import z3
+
+S = z3.Solver()
+
+# flag is 43 characters long
+X = [z3.BitVec("x%d" % i, 8) for i in range(43)]
+
+def emit(AD, UnaryOp, Imm, BinOp, Target, Comp):
+    print("=========Z3 Input=========")
+    # lazy format string, I know
+    print("AD = %s\nUnaryOp = %s\nImm = %s\nBinOp = %s\nTarget = %s\nComp = %s" % (AD, UnaryOp, Imm, BinOp, Target, Comp))
+
+    # processing
+    UOP = {0: lambda a1, a2: X[a1],             #default value; resolve accordingly
+            3: lambda a1, a2: X[a1] >> a2, 
+            4: lambda a1, a2: X[a1] << a2}
+    BOP = {0: lambda a1, a2: a1, 
+            1: lambda a1, a2: a1 + a2, 
+            2: lambda a1, a2: a2 - a1, 
+            5: lambda a1, a2: a1 & a2, 
+            6: lambda a1, a2: a1 | a2, 
+            7: lambda a1, a2: a1 ^ a2}
+    C = {0: lambda a1, a2: a1 == a2, 
+            1: lambda a1, a2: a1 > 0}        #ignore target value - it should be 0
+
+    S.add(C[Comp](BOP[BinOp](UOP[UnaryOp[0]](AD[0], Imm[0]), UOP[UnaryOp[1]](AD[1], Imm[1])), Target))
+#    print(S.model)
+#    quit()
+    return
+
+with open("./task", "rb") as f:
+    f.seek(0x9a16)  #address of first check
+    done = False
+    save = []       #a stack of sorts to keep track of location in procedure
+    numChecks = 0
+    while not done:
+        ad = [-1, -1]                   #indices of rax and rdx
+        unaryOp = [0, 0]                #unary operations
+        imm = [0, 0]                    #immediates
+        binaryOp = 0                    #binary operation
+
+        # q1: entrypoint of check
+        assert f.read(4) == b"\xf3\x0f\x1e\xfa", "[q1]: rep nop edx. FP = %s" % (hex(f.tell()))
+        assert f.read(1) == b"\x55", "[q1]: push rbp. FP = %s" % (hex(f.tell()))
+        assert f.read(3) == b"\x48\x89\xe5", "[q1]: mov rbp, rsp. FP = %s" % (hex(f.tell()))
+        if f.read(4) != b"\x48\x83\xec\x08":        #sub rsp, 8
+            f.seek(f.tell() - 4)
+
+        assert f.read(4) == b"\x48\x89\x7d\xf8", "[q1]: mov [rbp - 8], rdi. FP = %s" % (hex(f.tell()))
+
+        # q2: after the entrypoint, we are looking for instructions that
+        # get a part of the input and do some operation on them, all
+        # until a cmp or test instruction is reached
+        while f.read(4) == b"\x48\x8b\x45\xf8":     #mov rax, [rbp - 8]
+            # q3
+            if f.read(3) == b"\x48\x83\xc0":        #[load] add rax, imm8
+                loc = ord(f.read(1))
+            else:
+                f.seek(f.tell() - 3)                #reject these bytes
+                loc = 0
+
+            # q4
+            if f.read(3) == b"\x0f\xb6\x10":        #movzx edx, byte ptr [rax]
+                ad[1] = loc
+                unaryOp[1] = 0
+                imm[1] = 0
+                continue
+
+            f.seek(f.tell() - 3)                #reject these bytes
+            assert f.read(3) == b"\x0f\xb6\x00", "[q4]: movzx eax, byte ptr [rax]. FP = %s" % (hex(f.tell()))
+            ad[0] = loc
+            unaryOp[1] = 0
+            imm[1] = 0
+
+            # q5
+            if f.read(2) == b"\x89\xc2":        #mov edx, eax
+                ad[1] = ad[0]
+                unaryOp[1] = unaryOp[0]
+                imm[1] = imm[0]
+                continue
+            
+            f.seek(f.tell() - 2)                #reject these bytes
+            if f.read(3) != b"\x0f\xbe\xc0":    #movsx eax, al (do nothing)
+                f.seek(f.tell() - 3)
+
+            save.append(f.tell())               #save current location
+            f.seek(save[-1])                    #not necessary, but consistent
+            if f.read(2) == b"\xd0\xf8":        #shr al, 1
+                unaryOp[0] = 3                  #shr al, ...
+                imm[0] = 1
+                save.pop()
+                continue
+
+            f.seek(save[-1])                    #stack peek :)
+            if f.read(2) == b"\xc0\xf8":        #shr al, imm8
+                unaryOp[0] = 3
+                imm[0] = ord(f.read(1))
+                save.pop()
+                continue
+
+            f.seek(save[-1])
+            if f.read(2) == b"\xd1\xe0":        #shl eax, 1
+                unaryOp[0] = 4                  #shl al, imm[0]
+                imm[0] = 1
+                save.pop()
+                continue
+
+            f.seek(save[-1])
+            if f.read(2) == b"\x01\xc0":        #add eax, eax       ;why not just do shl eax, 1??
+                unaryOp[0] = 4
+                imm[0] = 1
+                save.pop()
+                continue
+
+            f.seek(save[-1])
+            if f.read(2) == b"\xc1\xe0":        #shl eax, imm8
+                unaryOp[0] = 4
+                imm[0] = ord(f.read(1))
+                save.pop()
+                continue
+
+            f.seek(save.pop())
+            print("[q5]: Accepted a static operand. FP = %s" % (hex(f.tell())))
+
+        f.seek(f.tell() - 4)                #reject those bytes
+        # q6
+        while True:
+            save.append(f.tell())
+            f.seek(save[-1])
+            if f.read(2) == b"\x01\xd0":    #add eax, edx
+                binaryOp = 1
+                save.pop()
+                break
+
+            f.seek(save[-1])
+            if f.read(4) == b"\x29\xc2\x89\xd0":    #sub edx, eax; mov eax, edx
+                binaryOp = 2
+                save.pop()
+                break
+
+            f.seek(save[-1])
+            if f.read(2) == b"\x21\xd0":    #and eax, edx
+                binaryOp = 5
+                save.pop()
+                break
+
+            f.seek(save[-1])
+            if f.read(2) == b"\x09\xd0":    #or eax, edx
+                binaryOp = 6
+                save.pop()
+                break
+
+            f.seek(save[-1])
+            if f.read(2) == b"\x31\xd0":    #xor eax, edx
+                binaryOp = 7
+                save.pop()
+                break
+
+            f.seek(save.pop())
+            print("[q6]: Accepted a static operand. FP = %s" % (hex(f.tell())))
+            break
+
+        # q7
+        while True:
+            save.append(f.tell())
+            f.seek(save[-1])
+            if f.read(2) == b"\x84\xc0":    #test al, al
+                target = 0
+                save.pop()
+                break
+
+            f.seek(save[-1])    
+            if f.read(1) == b'\x3c':        #cmp al, imm8
+                target = ord(f.read(1))
+                save.pop()
+                break
+
+            f.seek(save[-1])
+            if f.read(2) == b"\x38\xc2":    #cmp dl, al
+                target = 0
+                assert binaryOp == 0, "[q7]: Nonsensical binop / compare combination. FP = %s" % (hex(f.tell()))
+                binaryOp = 2
+                save.pop()
+                break
+
+            f.seek(save.pop())
+            raise AssertionError("[q7]: Invalid compare instruction found. FP = %s" % (hex(f.tell())))
+        
+        # q8
+        numChecks += 1
+#        if numChecks > 200:
+#            break
+
+        if f.tell() == 0x11d3:
+            done = True
+        else:
+            while True:
+                save.append(f.tell())
+                f.seek(save[-1])
+                if f.read(2) == b"\x75\x17":
+                    comp = 0                #test for equality
+                    save.pop()
+                    break
+
+                f.seek(save[-1])
+                if f.read(2) == b"\x78\x17":
+                    comp = 1                #test for sign
+                    save.pop()
+                    break
+
+                f.seek(save.pop())
+                raise AssertionError("[q8]: Invalid conditional jump instruction found. FP = %s" % (hex(f.tell())))
+
+            assert f.read(4) == b"\x48\x8b\x45\xf8", "[q8]: mov rax, [rbp - 8]. FP = %s" % (hex(f.tell()))
+            assert f.read(3) == b"\x48\x89\xc7", "[q8]: mov rdi, rax. FP = %s" % (hex(f.tell()))
+            assert f.read(1) == b"\xe8", "[q8]: call imm32. FP = %s" % (hex(f.tell()))
+            emit(ad, unaryOp, imm, binaryOp, target, comp)        #it's z3's business now
+            f.seek(unpack('i', f.read(4))[0] + f.tell())
+
+print("Done parsing program. %d checks discovered." % (numChecks))
+print(S.model)
+if S.check() == z3.sat:
+    print("Solution found.")
+    flag = ''.join([chr(int(str(S.model()[Xa]))) for Xa in X])
+    print("Flag: %s" % (flag))
+else:
+    print("Bad luck.")
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{4ll_7h3_w4y_70_7h3_d33p357_v4l1d4710n}</code></p>

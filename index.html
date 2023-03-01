@@ -1,4 +1,89 @@
 <!DOCTYPE html>
 
-<h1>Kyle Jiang</h1>
+<html>
 
+
+<head>
+
+<title>Nave1337</title>
+
+<link rel = "stylesheet" type = "text/css" href = "./css/mainStyle.css"/>
+
+<!--Code formatting style defs-->
+<link rel = "stylesheet" href = "//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.0/styles/default.min.css"/>
+<script src = "//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.0/highlight.min.js"></script>
+<script charset = "UTF-8" src = "//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.0/languages/x86asm.min.js"></script>
+
+<script type = "text/javascript" src = "./scripts/loadWriteups.js"></script>
+
+<script type = "text/javascript">
+window.onload = async function() {
+	await loadWriteups("./writeups/_directory.txt");
+
+	// highlight code in <pre> tags
+	var codes = document.getElementsByTagName("pre");
+
+	for (code of codes) {
+		hljs.highlightBlock(code);
+	}
+
+	// wait for all writeups to be loaded, then scroll to anchor
+	if (window.location.href.indexOf('#') > 0) {
+		var divid = (window.location.href).split('#').pop();
+		if (document.getElementById(divid)) {
+			var top = document.getElementById(divid).offsetTop;
+			window.scrollTo(0, top);
+		}
+	}
+}
+</script>
+
+<meta name = "viewport" content = "width = device-width, initial-scale = 1.0, maximum-scale = 1.0, user-scalable=0"/>
+
+</head>
+
+
+<body>
+
+<h1>The L2 Cache</h1>
+
+<h2>About</h2>
+
+<h3>Welcome</h3>
+
+<p>Hello! Welcome to my page :) I am YR81. I post about a variety of topics related to digital hardware and software (primarily software). You can find my writeups to some CTF challenges I have attempted below. I am in the process of transferring writeups here, so some data may still be on the other side of the pipeline. Feel free to reach out if something is wrong or can be improved.</p>
+
+<h3>About the Names</h3>
+
+<p>The <b>L2 cache</b> was introduced in the Intel Pentium Pro (P6). On the P6, the L2 cache was only 256 K, operated at 66 MHz, and integrated in the CPU itself. On the Pentium II, the L2 cache was upgraded to 512 K, and the speed was doubled to 133 MHz. The L2 cache has remained a part of the Intel architecture on all future processors. As a secondary cache, L2 is slower (lower priority) but has a greater capacity than L1. In the same way, learning about digital systems was always of low academic priority to our initial team members (none of us studied computer science), but was among the things that brought us all together.</p>
+
+<p>Our original CTF team name, <b>Nave1337</b>, was inspired by the apartment where everything started, North Avenue Room 213. The sink disposal mechanism in our kitchen was eternally broken, so the entire room smelled of rotten vegetables. This website, all of the writeups, and its future, are dedicated to C.S., probably the craziest person YR81 has met in college, and the one who started the engagement with binary exploitation. However, due to complications, C.S. had to leave us. Now I play pretty casually with <a href = "https://ctftime.org/team/141760" target = "_blank">5h4d0wb10k3r</a> and <a href= "https://ctftime.org/team/140177/" target = "_blank">OyuSec</a>.</p>
+
+<h3>Entry Point = <code>0x7e1</code></h3>
+
+<p>How did I personally get involved with CTFs? It really started in high school, when another very nice individual (and exceptionally experienced and talented engineer), G.H., introduced me to the Intel 8085 and assembly programming, among other topics. In college, there was a grey-hat hacking group that I casually participated in after being introduced by C.S. I was initially disinterested by the meeting topics, since they were web :( and I personally did not have any real experiences with such exploits. However, in the following semester, the organizers started discussing stack buffer overflows and basic Linux binary reversing, which sparked my interest in practical binary exploitation.</p>
+
+<h3>Contact</h3>
+
+<p>All contact should be directed to <code>kerljenge (at) gmail (dot) com</code>. You can expect a response within a couple days, depending, of course, on how busy I am. I am currently a graduate student, so please do not be surprised if I do not reply in a long time (but do know, I try my best!).</p>
+
+<h2>Writeups</h2>
+
+<p>Writeups to various challenges will be posted here. Old writeups that have not yet been converted to the formatting of this site will be linked at the bottom of this section.</p>
+
+<div id = "writeupstream">
+
+<!--Writeups will be loaded in full html here-->
+
+</div>
+
+<h2>Resources and References</h2>
+
+<p>We thank <a href = "https://highlightjs.org/" target = "_blank">highlight.js</a> for the code formatting capabilities.</p>
+
+<p>For a comprehensive overview of IDA, both in its basic features and advanced scripting capabilities, see <a href = "https://www.amazon.com/dp/B005EI84TM/ref=cm_sw_em_r_mt_dp_U_TETcFbESC9FV2" target = "_blank">The IDA Pro Book</a> by Chris Eagle. For an introduction to the Intel hardware, software architecture, and interfacing, see <a href = "https://www.amazon.com/dp/B008GEE77O/ref=cm_sw_em_r_mt_dp_U_PBTcFbJD70T50" target = "_blank">The Intel Microprocessors</a> by Barry Brey.</p>
+
+</body>
+
+
+</html>

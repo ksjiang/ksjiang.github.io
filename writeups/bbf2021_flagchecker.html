@@ -1,0 +1,63 @@
+<!--Solve date: 01/16/2021-->
+
+<h1>BambooFox CTF 2021 - Flag Checker</h1>
+
+<h2>Reverse Engineering [1]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>The challenge features a flag checker written in Verilog (!). The main challenge file is located in <code>t_chall.v</code>. There is a 32-byte target array which holds the encrypted flag. The goal is to enter the flag which will encode to the target. The encoding function is given in <code>chall.v</code>, which defines an 8-bit input and an 8-bit output - i.e., the block size is 1 byte and we can reverse each target byte independently of the others. Within the block, four operations are performed in series on the input byte depending on four groups of two bits of the input (starting with the lowest two bits). These groups determine the operation, which are enumerated in the final file, <code>magic.v</code>. Because we know bytes are transformed independently and deterministically, just calculate the encoded values of the printable ASCII range and perform <code>indexOf()</code> to get the decoded value.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>Shown below are the transformation details for an input byte, where <code>val0, val1, val2, val3</code> are the four slices of two bits of the input. Notice that the output of one stage is the input to the next.</p>
+
+<img class = "small" src = "./images/bbf2021_flagchecker_1.png"/>
+
+<p>Each stage of the transformation is based on the two-bit control value. If the control code is <code>0b00</code>, then the input is rotated right by 3 bits. If the control code is <code>0b01</code>, then the input is rotated left by 2 bits. If <code>0b10</code>, <code>0x37</code> is added to the input, and <code>0b11</code> XORs the input with 0x37.</p>
+
+<img class = "small" src = "./images/bbf2021_flagchecker_2.png"/>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+code2 = [182, 199, 159, 225, 210, 6, 246, 8, 172, 245, 6, 246, 8, 245, 199, 154, 225, 245, 182, 245, 165, 225, 245, 7, 237, 246, 7, 43, 246, 8, 248, 215]       #extracted from t_chall.v
+
+def algo(b, v):
+    if v == 0:
+        return ror(b, 3)
+    elif v == 1:
+        return ror(b, 6)
+    elif v == 2:
+        return (b + 0b110111) & 0xff
+    elif v == 3:
+        return b ^ 55
+    else:
+        raise ValueError("Undefined operation")
+    
+def bits2(b, start):
+    return (b >> start) & 0x3
+    
+def outerAlgo(b):
+    return algo(algo(algo(algo(b, bits2(b, 0)), bits2(b, 2)), bits2(b, 4)), bits2(b, 6))
+    
+for i in range(len(code2)):
+    found = [j for j, x in enumerate(key) if x == code2[i]]
+    for founda in found:
+        if founda >= 0x20 and founda < 0x7f:
+            flag += chr(founda)
+            continue
+
+print(flag)
+</pre>
+
+<h4>Flag</h4>
+
+<p>It turns out that the mapping is not one-to-one (too bad!) But the correct flag can be easily deduced after performing the calculations above.</p>
+
+<p><code>flag{v3ry_v3r1log_f14g_ch3ck3r!}</code></p>

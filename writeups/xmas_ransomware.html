@@ -1,0 +1,43 @@
+<!--Solve date: 12/23/2020-->
+
+<h1>X-Mas CTF 2020 - Ransomware</h1>
+
+<h2>Reverse Engineering - 498 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>Disclaimer: I did not solve this challenge during the CTF but had the correct general idea. Here I will walk through the entire solution process.</p>
+
+<p>This challenge featured a toy ransomware that was supposedly delivered via email to a computer, which then ran the malicious payload. We are given the contents of the email, the malicious <code>homework.pdf</code> file that contained the ransomware, and an image of the hard disk which has already been infected. Our goal is to recover the contents in the hard disk.</p>
+
+<p>We start with the email image. It doesn't contain anything too spectacular.</p>
+
+<img src = "./images/xmas_ransomware_1.png"/>
+
+<p class = "caption">Figure 1. Screenshot of the email containing the malicious attachment.</p>
+
+<p>From the screenshot, we can determine that the email was sent on November 12, 2020 at 15:04 UTC. Note the ambiguity with December 11, 2020 (the American date format), which is resolved by noticing that December 11 is a Friday, while November 12 is a Thursday.</p>
+
+<p>Next we take a look at <code>homework.pdf</code>. Upon inspection, it is not a PDF file at all, but rather a Windows executable file! When analyzing with Detect-It-Easy (DIE) 2.05, we see that it is packed with UPX 3.91+, but it has been modified.</p>
+
+<img src = "./images/xmas_ransomware_2.png"/>
+
+<p class = "caption">Figure 2. DIE v2.05 analysis of the malicious file.</p>
+
+<p>Indeed, trying to decompress the executable with UPX results in a <code>CantUnpackException</code> due to some modification. Next we use PEView to analyze the executable, specifically, the section details.</p>
+
+<img src = "./images/xmas_ransomware_3.png"/>
+
+<p class = "caption">Figure 3. PEView output of the malicious file.</p>
+
+<p>The section names are fishy - UPX uses <code>UPX0</code> for the unpacked code section and <code>UPX1</code> for the unpacking routine and packed data. In this binary, they appear to have been renamed to <code>.sedata</code> and <code>.themida</code>, respectively. We can modify the section names with a hex editor and now, the file can be successfully unpacked with UPX.</p>
+
+<p>When we disassemble the malicious binary, we identify <code>main()</code> and identify the following section that makes extensive use of cryptographic functions in the Windows API:</p>
+
+<img src = "./images/xmas_ransomware_4.png"/>
+
+<p class = "caption">Figure 4. IDA disassembly of unpacked binary.</p>
+
+<p>Here, we can see that the MD5 hash of the current time is calculated.</p>

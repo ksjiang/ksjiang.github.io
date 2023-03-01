@@ -1,0 +1,140 @@
+<!--Solve date: 01/16/2021-->
+
+<h1>BambooFox CTF 2021 - Better Than ASM</h1>
+
+<h2>Reverse Engineering [3]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>We are given an LLVM assembly listing. The listing requests an input and checks it, outputting the flag if the input satisfies the constraints. There are in fact multiple inputs that satisfy the check, but only one of them will give printable text. To make the assembly more readable, I converted the listing to x64.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>The procedure that checks the input is given below:</p>
+
+<pre class = "x86asm">
+check:                                  # @check
+    push    rbp
+    push    r15
+    push    r14
+    push    rbx
+    sub     rsp, 24
+    mov     qword ptr [rsp + 16], rdi       ;int var = input
+    mov     dword ptr [rsp + 12], 1 ;int X = 1;
+    mov     dword ptr [rsp + 8], 0  ;int i = 0;
+    mov     r14, qword ptr [rip + what@GOTPCREL]    ;r14 -> what@GOTPCREL
+.LBB0_1:                                # =>This Inner Loop Header: Depth=1
+    movsxd  rbx, dword ptr [rsp + 8]
+    mov     rdi, r14
+    call    strlen@PLT
+    cmp     rbx, rax
+    jae     .LBB0_3
+    mov     r15, qword ptr [rsp + 16]
+    movsxd  rbx, dword ptr [rsp + 8]
+    movzx   ebp, byte ptr [r15 + rbx]       ;bpl = input[i]
+    inc     rbx                     ;rbx = i + 1
+    mov     rdi, r14
+    call    strlen@PLT
+    mov     rcx, rax                ;rcx = strlen(what@GOTPCREL)
+    mov     rax, rbx
+    xor     edx, edx                ;edx = 0
+    div     rcx                     ;rdx = (i + 1) % strlen(what@GOTPCREL)
+    xor     bpl, byte ptr [r15 + rdx]       ;bpl = input[i] ^ input[(i + 1) % strlen(what@GOTPCREL)]
+    movsx   eax, bpl
+    movsxd  rcx, dword ptr [rsp + 8]        ;rcx = i
+    movsx   ecx, byte ptr [r14 + rcx]       ;ecx = what[i]
+    xor     edx, edx
+    cmp     eax, ecx
+    sete    dl
+    and     dword ptr [rsp + 12], edx
+    inc     dword ptr [rsp + 8]     ;i += 1;
+    jmp     .LBB0_1
+.LBB0_3:
+    mov     eax, dword ptr [rsp + 12]
+    add     rsp, 24
+    pop     rbx
+    pop     r14
+    pop     r15
+    pop     rbp
+    ret
+
+...
+
+what:
+    .asciz  "\027/'\027\035Jy\003,\021\036&\nexjONacA-&\001LANH'.&\022>#'Z\017O\013%:(&HI\fJylL'\036mtdC\000\000\000\000\000\000\000"
+
+</pre>
+
+<p>In this listing, <code>what</code> is a 56-byte null-terminated string. We can see that the checker works by XORing two consecutive bytes of the input (in the case of the last character, it XORs it with the first) and compares it to the corresponding byte in <code>what</code>. Even though the first byte is not unique, by asserting a value for the first byte, we can solve uniquely for all subsequent bytes.</p>
+
+<p>After the input is validated, the flag is printed. Going into the <code>main()</code> procedure, we find this sequence of instructions after the check:</p>
+
+<pre class = "x86asm">
+    mov     dword ptr [rsp + 8], 0      ;int j = 0
+    lea     r14, [rsp + 16]
+    mov     r15, qword ptr [rip + secret@GOTPCREL]
+.LBB1_4:                                # =>This Inner Loop Header: Depth=1
+    movsxd  rbx, dword ptr [rsp + 8]
+    mov     rdi, r14
+    call    strlen@PLT
+    cmp     rbx, rax
+    jae     .LBB1_9                     ;prints character array at [rsp + 16]
+    movsxd  rbx, dword ptr [rsp + 8]
+    movzx   ebp, byte ptr [rsp + rbx + 16]
+    mov     rdi, r15
+    call    strlen@PLT
+    mov     rcx, rax
+    mov     rax, rbx
+    xor     edx, edx
+    div     rcx                         ;rdx = j % strlen(secret)
+    movzx   eax, byte ptr [r15 + rdx]
+    xor     eax, ebp
+    movsxd  rcx, dword ptr [rsp + 8]
+    mov     byte ptr [rsp + rcx + 16], al
+    inc     dword ptr [rsp + 8]
+    jmp     .LBB1_4
+
+...
+
+secret:
+    .asciz  "B\n|_\"\006\033g7#\\F\n)\t0Q8_{Y\023\030\rP\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+</pre>
+
+<p>Here, we are using another string constant <code>secret</code>, which is 25 bytes long, as an XOR key to decode the validated input. Because the input is longer than the key, note that there is a modulo operation performed; i.e., the key is cyclic. Again, more than one value satisfies the validation, so we will XOR each possibility with <code>secret</code> to see if any output makes sense.</p>
+
+<h4>Solve Script</h4>
+<pre class = "python">
+
+with open("./flag.enc", "rb") as f:
+    contents = f.read()
+
+#flag[i] ^ flag[i + 1] == contents[i]
+#we know that first byte of flag is 'f'
+
+with open("./secret.bin", "rb") as g:
+    secret = g.read()
+
+print(contents)
+print(secret)
+
+for start in range(0x100):
+    flag = [start]
+    for contentsa in contents[: -1]:
+        flag.append(flag[-1] ^ contentsa)
+
+    assert flag[0] == flag[-1] ^ contents[-1]
+
+#    if flag[0] == ord('f') ^ secret[0]:
+    if True:
+        print(''.join([chr(flaga ^ secreta) for (flaga, secreta) in zip(flag, 4 * secret)]))
+</pre>
+
+<h4>Flag</h4>
+
+<p>Among a bunch of outputs that make no sense, there is one string with all printable ASCII characters, and it gives the flag.</p>
+
+<p><code>flag{7h15_f14g_15_v3ry_v3ry_l0ng_4nd_1_h0p3_th3r3_4r3_n0_7yp0}</code></p>

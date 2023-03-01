@@ -1,0 +1,165 @@
+<!--Solve date: 01/18/2021-->
+
+<h1>BambooFox CTF 2021 - Turing Machine Diagram</h1>
+
+<h2>Reverse Engineering [6]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>Disclaimer: I did not solve this challenge by the time the CTF ended due to a bug in the challenge mechanics.</p>
+
+<p>This was quite an interesting problem. We are only given two shared object files (libc and ld) and two netcat addresses, one from which to extract information and another to input a key or flag. We are also given a drawing of a Finite State Automaton (FSM) that implements a regular expression for a key. We are told that we have to build an automata to find the key and get the flag.</p>
+
+<p>Several points: (1) The FSM was referred to as an NFA (Non-deterministic Finite Automaton), which is <i>technically</i> correct. However, the given NFA is actually deterministic - each transition is uniquely determined by state and input symbol. (2) The point about resolving the key in "polynomial time" is highly misleading; we will see that the key actually has fixed length and can be resolved in <code>O(1)</code> time. (3) "Turing machine" and NFA are used interchangeably, which makes sense only after figuring out how the challenge works but seems unnecessary at the outset.</p>
+
+<p>Anyways, by netcatting to the first address, we see a bunch of gibberish dumped out. However, it is easily recognized as an ELF file - we can redirect the output to a file for further analysis. Netcatting to the second address waits for our input, appears to check it, and prints the flag if it is correct. (If it is not correct, it says that it will still try to resolve the flag "in non-polynomial time" but the service times out after a single character is printed.) At first, I thought the second service was running exactly the binary on the first service, but this turned out not to be the case. With much confusion, let's dive in to some low-level analysis.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>Let's decompile the binary we extract from the first service.</p>
+
+<img src = "./images/bbf2021_turing_1.png"/>
+
+<p>I have renamed some of the variables according to how I interpreted the function. Starting at the top, there is a calculation of the base of <code>libc</code>, which we can easily deduce by finding the address of <code>__isoc99_scanf()</code> plus the given signed offset. Then, a format string <code>The comparison between the key and your input is: %lld.\n</code> is copied into another offset within <code>libc</code>. Already this is looking pretty strange.</p>
+
+<p>Next, we <code>calloc()</code> some memory for a thing called <code>rope</code> (variable name not mine). It is copied from the readonly data section of the binary to the malloced region. Note that the size is 2225 = 8 * 278 + 1. The data seems mostly random and does not resemble any address or offset within the binary.</p>
+
+<img src = "./images/bbf2021_turing_2.png"/>
+
+<p>After this, we call a function <code>decrypt()</code> (again, name not mine) and check if the result is positive. If not, we simply return. If it is, then we traverse the malloced region and check the lower nibble of the highest byte in each qword; if any bits are set, the the byte is XORed against 0x0f (essentially flipping all the bits of that nibble) and added to <code>libcbase</code>. Following this loop, we seem to call an offset within <code>libc</code>, but to get a better idea of what is happening, let's look at the disassembly:</p>
+
+<img src = "./images/bbf2021_turing_3.png"/>
+
+<p>Here, we are loading the address of a function I called <code>fail()</code> that prints <code>Your turing maching is SO WRONG...</code> into <code>r14</code> and jumps to the first entry of <code>rope</code>. Recall that the source of this <code>rope</code> did not contain any intelligible addresses - they must have been transformed in <code>decrypt()</code>. Let's look into that function.</p>
+
+<img src = "./images/bbf2021_turing_4.png"/>
+
+<p>We get to input 40 characters supposedly that form a Turing machine. Since we know that we are eventually jumping to a ROP chain, we can guess that our input somehow determines the addresses in that chain. Indeed, if our input passes a series of checks, <code>rope</code> is modified by XORing even byte offsets with <code>0xf9</code> and XORing the odd byte offsets with the input treated as a cyclic key.</p>
+
+<p>Immediately, the entropy of the <code>rope</code> has decreased by half. But actually, we can find more information, because we know from the problem description that the key follows a certain format; namely, it begins with <code>key{</code>, continues with a string of alphanumeric characters, and terminates with <code>}</code>. We also know that addresses resolved within <code>libc</code> must fall within the bounds of its mapping. Hopefully, there is a unique ROP chain that results from this decoding process - otherwise, we are in for a world of pain.</p>
+
+<p>We can start by noting that offsets within <code>libc</code> should be at most 6 hex digits wide (we can easily see this from the given file). So, we can deduce that the upper bytes of the decoded addresses should all be null, with the exception of the highest byte, which should be <code>0x0f</code> to ensure that it is interpreted correctly in <code>main()</code>. This already gives us an additional 3 of the remaining 4 bytes for each ROP link. In other words, for library addresses, the result should be <code>0f 00 00 00 00 YY XX YY</code>, where digits marked with <code>Y</code> are nonzero but are determined, since they do not depend on the key.</p>
+
+<p>Let's try it. The first encoded ROP link is <code>0x74f979f965f09ee0</code>. First, let's XOR all of the even-offset bytes with <code>0xf9</code>, giving us <code>0x7400790065099e19</code>. We can see that our assumption about library offsets is met: bytes 4 and 6 are both null. Now, since we know that this first link is an offset in <code>libc</code>, the decoded MSB should be <code>0x0f</code>: this means the fourth character in the key should be <code>chr(0x74 ^ 0x0f) = '{'</code>, which agrees with the key format. Furthermore, bytes 3 and 5 should be null, which means the second and third characters should be <code>chr(0x65 ^ 0) = 'e'</code> and <code>chr(0x79 ^ 0) = 'y'</code> respectively, also agreeing with the key format. The unknown byte 1 cannot be solved for with the information here; rather, we should search for reasonable gadgets at addresses <code>0x9XX19</code>.</p>
+
+<p>This can be done using a ROP gadget tool, such as <a href = "https://github.com/JonathanSalwan/ROPgadget" target = "_blank"><code>ROPgadget</code></a>; we can specify the address range to search and dump the results into a file as follows:</p>
+
+<p><code>ROPgadget --binary ./libc-2.32.so --range 0x90019-0x9ff19 --nojop --nosys > ./libc-2.32_gadgets.txt</code></p>
+
+<p>Even with the restrictions, there are many results. But because we know the LSB is 0x19, we can search for the string sequence <code>19 : </code>, and this will return all the desired matches.</p>
+
+<img src = "./images/bbf2021_turing_5.png"/>
+
+<p>Many of these results are pretty useless for our particular ROP. For instance, any gadget that ends in <code>ret &lt;big number&gt;</code> is probably not the gadget we want, since our ROP chain is not that big. Also, since none of the registers are really initialized, it doesn't make sense for the gadget to contain any register-indirect accesses. One gadget remains - the last one on the list, which clears <code>rax</code> and returns to the next gadget. Note that the unknown byte is <code>0xf5</code>, which means the first byte of our key is <code>chr(0xf5 ^ 0x9e) = 'k'</code>, precisely what we expected.</p>
+
+<p>The process can be continued to find additional gadgets and revealing new parts of the key. With trial-and-error (which I spare here), a tad of intuition, and keeping in mind the key cycles back every 40 characters, we can find the ROP chain to be:</p>
+
+<pre class = "x86asm">
+xor rax, rax
+pop rdi -> 0
+pop rsi -> 0x1c5e60
+pop rdx; pop r12 -> 0x28, (any)
+syscall
+{
+pop rcx; pop rbx -> 0x1c5e60 - 1 + k, (any)
+pop rax -> flag[k]
+sub byte ptr [rcx + 1], al
+} for k in range(40)
+
+xor r10d, r10d
+mov eax, r10d
+{
+pop rdi -> 0x1c5e40 + 8 * j
+add r10, [rdi + 0x20]; mov rax, r10
+} for j in range(5)
+
+mov rax, r10
+pop rbx -> 0x13a4a5 {-> pop rax; pop rdx; pop rbx}
+push rax; call rbx
+    ...
+    pop rax {-> instruction after "call rbx"}
+    pop rdx {= original rax}
+    pop rbx -> (any)
+    ret -> 0x29d8f
+pop rsi -> 0x1c69e0
+pop rdi -> 1
+dprintf()
+pop rdi -> 0
+exit()
+</pre>
+
+<p>First, we have <code>syscall</code> with <code>rax = 0</code>, which is <code>read()</code>. We are reading <code>0x28 = 40</code> bytes from file descriptor 0, which is <code>stdin</code> and into a memory region at libc offset <code>0x1c5e60</code>. Note that the size argument is exactly equal to the length of the key we are trying to find. Next, we loop through that input and subtract an immediate value from each character. If the input matches the key, the result should be 0. Not surprisingly, after this loop, we add up the differences in sets of qwords, and the result is passed as the first format argument in a call to the libc function <code>dprintf()</code>, which prints  to file descriptor 1 (<code>stdout</code>). Notice that the format source aragument is <code>0x1c69e0</code>, which is where that initial format string <code>The comparison between the key and your input is: %lld.\n</code> was loaded. After printing, we <code>exit(0)</code>. In short, the ROP chain calculates the difference between the input and the key that generated it. Note that this is <i>not</i> the same automaton as the one given in the challenge, which accepts keys of arbitrary length (as long as they terminate with <code>}</code>)!</p>
+
+<p>In any case, every so often the binary from the first server changes, so we have to automate the process of extracting the key. It turns out that the ROP chain and even the gadgets remains the same even when the key changes. So, we can just extract the key by: (1) using the known gadget addresses to find the correct key characters, or (2) reading the correct immediate operands which are subtracted from the key during the loop from the LSB after XORing the ROP stream with <code>0x00f900f900f900f9</code>. Both ways are shown in the solve script below, and they both produce the same (correct) result.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+p1 = remote("chall.ctf.bamboofox.tw", 7619)     #to extract key
+p2 = remote("chall.ctf.bamboofox.tw", 7719)     #to submit key and get flag
+
+ready = True
+
+if ready:
+    p1.recvn(0x2098)                                #navigate to source of encoded ROP chain
+    ROPsource = p1.recvn(278 * 8)                   #get the ROP chain
+    p1.close()
+else:
+    with open("./chall", "rb") as f:
+        f.seek(0x2098)
+        ROPsource = f.read(278 * 8)
+
+# get encoded ROP elements
+ROPenc = [u64(ROPsource[8 * i: 8 * (i + 1)]) for i in range(len(ROPsource) // 8)]
+#print(len(ROPenc))
+#print(hex(ROPenc[0]))
+# first remove 0xf9 annoyances
+KEY1 = 0x00f900f900f900f9
+ROPenc = list(map(lambda a: a ^ KEY1, ROPenc))
+#print(hex(ROPenc[0]))
+# extract key in groupings of 4; don't care right now about
+# entropy in highest byte of each group
+
+IDX = [0, 1, 2, 3, 4, 5, 6, 27, 8, 9]
+KEY2 = [0x0f0000000009f519, 0x0f00000000027b15, 0, 0x0f00000000029d8f, 0x0f000000001c5e60, 0x0f000000000fb841, 0x28, 0x0f000000000e6bce, 0x0f00000000059f5a, 0x0f000000000e6bce]       #known gadgets
+
+key = [0] * 40
+for i in range(len(IDX)):
+    key[4 * i] = ((ROPenc[IDX[i]] >> 8) ^ (KEY2[i] >> 8)) & 0xff
+    key[4 * i + 1] = ((ROPenc[IDX[i]] >> 24) ^ (KEY2[i] >> 24)) & 0xff
+    key[4 * i + 2] = ((ROPenc[IDX[i]] >> 40) ^ (KEY2[i] >> 40)) & 0xff
+    key[4 * i + 3] = ((ROPenc[IDX[i]] >> 56) ^ (KEY2[i] >> 56)) & 0xff
+
+print(hex(ROPenc[IDX[7]]))
+print(''.join([chr(keya) for keya in key]))
+
+# this key is correct for the most part, but we must check the highest byte in
+# each group of 4. do this by analyzing the immediates loaded by the checker machine
+#for i in range(len(IDX)):
+#    key[4 * i + 3] = ROPenc[31 + 4 * 6 * i] & 0xff
+
+KEY = ''.join([chr(keya) for keya in key])      #this key should be correct
+print("Actual key: %s" % (KEY))
+
+# well that was stupid. just extract the key directly...
+KEY = ''
+for i in range(40):
+    KEY += chr(ROPenc[13 + 6 * i] & 0xff)
+
+print("Actual key: %s" % (KEY))
+
+p2.send(KEY)
+
+p2.interactive()    
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>flag{Th1s_1s_a_p0lyn0m14l_71m3_R0P_pr3par3d_f0r_y0ur_A_plus_n3x7_year}</code></p>

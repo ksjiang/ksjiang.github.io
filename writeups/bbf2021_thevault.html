@@ -1,0 +1,202 @@
+<!--Solve date: 01/17/2021-->
+
+<h1>BambooFox CTF 2021 - The Vault</h1>
+
+<h2>Reverse Engineering [5]</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>We are given a webpage with a keypad. Its backend is a JavaScript (JS) script along with a Web-Assembly (WASM) binary. We can host the file on <code>localhost</code> to play around with it and use Chrome Webdev tools to extract the assembly listing from the WASM file. From there we can find the key that unlocks the keypad and displays the flag.</p>
+
+<img src = "./images/bbf2021_thevault_1.png"/>
+
+<h5>Low-Level Analysis</h5>
+
+<p>Let's first take a look at the HTML to see what happens when we try to validate the input.</p>
+
+<img src = "./images/bbf2021_thevault_2.png"/>
+
+<p>It appears to call a function named <code>validate</code> in a JS object named <code>Module</code>. Let's analyze the JS file to see how the validation works.</p>
+
+<img src = "./images/bbf2021_thevault_3.png"/>
+
+<p>It appears to reference a function <code>n()</code> in an attribute <code>asm</code>, which we quickly find is the included WASM file. Indeed, the WASM file exports <code>n()</code>, whose listing is given below:</p>
+
+<pre class = "wasm">
+(func $n (;8;) (export "n")
+(local $var0 i32) (local $var1 i32) (local $var2 i32) (local $var3 i32) (local $var4 i32)
+global.get $global0
+i32.const 32
+i32.sub
+local.tee $var0
+global.set $global0
+call $a.d
+local.set $var1
+local.get $var0
+i32.const 1720
+i32.load16_u
+i32.store16 offset=24
+local.get $var0
+i32.const 1712
+i64.load
+i64.store offset=16
+local.get $var0
+i32.const 1704
+i64.load
+i64.store offset=8
+local.get $var0
+i32.const 1696
+i64.load
+i64.store
+block $label2
+    block $label0
+    local.get $var1
+    call $func7
+    i32.const 4
+    i32.ne
+    br_if $label0
+    local.get $var1
+    i32.load8_u
+    i32.const 112
+    i32.ne
+    br_if $label0
+    local.get $var1
+    i32.load8_u offset=1
+    i32.const 51
+    i32.ne
+    br_if $label0
+    local.get $var1
+    i32.load8_u offset=2
+    i32.const 107
+    i32.ne
+    br_if $label0
+    local.get $var1
+    i32.load8_u offset=3
+    i32.const 48
+    i32.ne
+    br_if $label0
+    i32.const 22
+    local.set $var3
+    local.get $var0
+    local.set $var4
+    loop $label1
+        local.get $var4
+        local.get $var1
+        local.get $var2
+        i32.const 3
+        i32.and
+        i32.add
+        i32.load8_u
+        local.get $var3
+        i32.xor
+        i32.store8
+        local.get $var0
+        local.get $var2
+        i32.const 1
+        i32.add
+        local.tee $var2
+        i32.add
+        local.tee $var4
+        i32.load8_u
+        local.tee $var3
+        br_if $label1
+    end $label1
+    local.get $var0
+    call $a.c
+    br $label2
+    end $label0
+    call $a.b
+end $label2
+local.get $var0
+i32.const 32
+i32.add
+global.set $global0
+)
+</pre>
+
+<p>While it may seem complex at first (especially if WASM is not a familiar assembly flavor), we just need to remember that WASM is a stack-based VM. Let's follow each of the local variables (there are four of them in this function). Note that <code>$var0</code> appears to hold a global address, but looking closer at the entry point:</p>
+
+<pre class = "wasm">
+global.get $global0
+i32.const 32
+i32.sub
+local.tee $var0
+global.set $global0
+</pre>
+
+<p>and the epilog of this procedure:</p>
+
+<pre class = "wasm">
+local.get $var0
+i32.const 32
+i32.add
+global.set $global0
+</pre>
+
+<p>we can deduce that <code>$var0</code> functions like a stack pointer. Just after the entry point, <code>$var1</code> is initialized to the return value of a call to another function <code>a.d</code>:</p>
+
+<pre class = "wasm">
+call $a.d
+local.set $var1
+</pre>
+
+<p>Following this name reference, we find this near the beginning of the WASM listing:</p>
+
+<pre class = "wasm">
+(func $a.d (;3;) (import "a" "d") (result i32))
+</pre>
+
+<p>which is defined in the JS file:</p>
+
+<pre class = "javascript">
+var asmLibraryArg = {
+    "e": banner,
+    "a": _emscripten_resize_heap,
+    "b": fail,
+    "d": get_password,
+    "c": win
+};
+</pre>
+
+<p>So, <code>$var1</code> is being set to the entered password. Going back to <code>n()</code>, <code>$var0</code> is initialized to some data starting at address <code>1696</code>. Next, we enter a block <code>$label2</code> and <code>$label0</code>. We call <code>$func7()</code> with <code>$var1</code> as input and compare the output with 4. Note that the keypad has four character spaces; we can verify that <code>$func7()</code> gives the length of the input (in UTF-8 characters, not shown here). If the length is not 4, we <code>br_if</code> with argument <code>$label0</code>. In WASM, the branch argument for a block turns out to be the instruction following the entire block (i.e., the <code>end &lt;$lbl&gt;</code> tag). The instructions after <code>&lt;$label0&gt;</code> is <code>call $a.b</code>; looking at the JS dictionary, we see that is the <code>fail</code> function. So we want to avoid branching there.</p>
+
+<img src = "./images/bbf2021_thevault_4.png"/>
+
+<p>After the length check, we have a series of comparisons of the four values, which all need to be satisfied to avoid failing:</p>
+
+<pre class = "wasm">
+local.get $var1
+i32.load8_u
+i32.const 112
+i32.ne
+br_if $label0
+local.get $var1
+i32.load8_u offset=1
+i32.const 51
+i32.ne
+br_if $label0
+local.get $var1
+i32.load8_u offset=2
+i32.const 107
+i32.ne
+br_if $label0
+local.get $var1
+i32.load8_u offset=3
+i32.const 48
+i32.ne
+br_if $label0
+</pre>
+
+<p>Here, we see that the first character must be 'p', the second '3', the third 'k', and the last '0'. So the correct input is "p3k0"? Let's try it by using the Console (of course, we can't enter non-numeric characters using the keypad!).</p>
+
+<img src = "./images/bbf2021_thevault_5.png"/>
+
+<p>The flag is decoded and printed for us.</p>
+
+<h4>Flag</h4>
+
+<p><code>flag{w45m_w4sm_wa5m_wasm}</code></p>

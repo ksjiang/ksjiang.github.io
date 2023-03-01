@@ -1,0 +1,260 @@
+<!--Solve date: 01/30/2021-->
+
+<h1>Offshift CTF - Soul's Permutation Network</h1>
+
+<h2>Cryptography - 500 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>We are given a service that reads a 16-byte key from the flag file and generates 65536 pairs of plaintexts and ciphertexts encrypted with that key. The cipher is a <i>substitution-permutation network</i> (SPN); they have a general form of alternating applications of substitutions (represented by sbox table lookup), permutations (represented by a bijective reordering of bits), and subkey addition. The main idea of these networks is that they are (1) diffusive, which means that information is mixed around, making it infeasible to deterministically <i>solve</i> for the key, and (2) nonlinear, which means no linear or affine relationships exist among plaintext / ciphertext bits. (Recall that "linear" refers to operations modulo 2.) The diffusive attribute is captured by the permutation operation, which transports bits in each stage every which way, and the nonlinear attribute is captured by the sboxes, whose input-output relationship is in fact the only nonlinear component of the cipher. Even though no deterministic linear relationships exist, it turns out that for a poorly designed SPN, we can get very good <i>approximate</i> linear / affine relations that ultimately reveal the key. This attack is known as <i>linear cryptanalysis</i>.</p>
+
+<p>In this challenge, we have a typical SPN with 4 "rounds". There are only two subkeys used in the encryption, but this is irrelevant to our attack, which is capable of deducing a key with any number of subkeys as long as the linear approximations hold.</p>
+
+<img src = "./images/os2021_spn_1.png">
+
+<p class = "caption">Figure 1. Encryption procedure of the SPN.</p>
+
+<p>From the encryption procedure shown above, we can break down the cipher as the following series of steps, where we shorthand permutation as the function <code>P()</code> and substitution as the function <code>S()</code>.</p>
+
+<ul>
+    <li>
+        <p><code>u1 = XOR(pt, sk1)</code></p>
+        <p>This first part just XORs the plaintext with the first subkey.</p>
+    </li>
+    <li>
+        <p><code>u2 = XOR(P(S(u1)), sk2)</code></p>
+        <p>This is the first round of the SPN.</p>
+    </li>
+    <li>
+        <p><code>u3 = XOR(P(S(u2)), sk1)</code></p>
+        <p>The next round is identical to the first, just with a different subkey. (It is the same as the one used in the initial key addition.)</p>
+    </li>
+    <li>
+        <p><code>u4 = XOR(P(S(u3)), sk2)</code></p>
+        <p>Again, the same round, using the second subkey.</p>
+    </li>
+    <li>
+        <p><code>ct = XOR(P(S(u4)), sk1)</code></p>
+        <p>The final round that generates the ciphertext. It will not be shown here, but the <code>P()</code> operation in this step does not add to the security of the cipher, so it is often omitted in real SPNs.</p>
+    </li>
+</ul>
+
+<p>Now that we have the structure of the SPN, we can now formulate an attack on it. In the process of linear cryptanalysis (see [1] for more information), we begin by discovering linear / affine approximations for each of the sboxes (in this challenge, there is only one sbox). By "linear", we are referring to a combination (XOR) of input and output bits that produces 0. Expressed symbolically, <code>XOR(U[i], V[j]) = 0</code>, where i and j can be any subset of indices in the range of input and output sizes, respectively. On the other hand, by "affine", we refer to the combination of bits that results in 1; i.e., <code>XOR(U[i], V[j]) = 1</code>. Note that in a base-2 field, the result must be <i>either</i> 0 or 1.</p>
+
+<p>By design, sboxes are not linear, so no truly linear / affine relationship exists. However, sboxes do have <i>biases</i>, or deviation of the probability for a linear relationship to hold from the default probability of 50%. Note that deviation in either direction (positive for linear, negative for affine) is good - for us as the attacker, not so much for Soul, who is trying to hide the key :).</p>
+
+<p>To begin, let's try to get correlation involving a single bit of the output. For instance, let's look at the lowest bit, which can be described by the mask <code>0x01</code>. The sboxes are 8 bits wide, so we will try each of the 256 possible input masks from 0x00 (note that this outputs 0 for any input) to 0xff (which is simply the combination of all the bits of the input). We start the counter for each mask at <code>-128</code> and every time the equation <code>XOR(input[mask], output[0x01]) = 0</code> holds, then we increment the counter. At the end, dividing the result by 256 will give us the <i>bias</i> of the relationship - the difference between the probability of linearity and 50%. Let's print the top 5 biases with the largest magnitudes:</p>
+
+<pre class = "python">
+# return probability biases for 8-bit input and output masks
+# given a particular input or output mask
+# direction = 1: mask is at the output, get input masks
+# direction = 0: mask is at the input, get output masks
+def makeLAT(mask, direction):
+result = {}
+if direction:
+    for im in range(0x100):
+        count = -0x80
+        for x in range(0x100):
+            if parity(x & im) == parity(sbox[x] & mask):
+                count += 1
+
+        result[im] = count
+else:
+    for om in range(0x100):
+        count = -0x80
+        for x in range(0x100):
+            if parity(x & mask) == parity(sbox[x] & om):
+                count += 1
+
+        result[om] = count
+
+ptmasks = makeLAT(0x01, 1)
+for ptmasksa in sorted(ptmasks, key = ptmasks.get, reverse = True):
+    print("%s\t%d" % (format(ptmasksa, "08b"), ptmasks[ptmasksa]))
+</pre>
+
+<p>Linear</p>
+<p><code>
+00010101        16
+01101011        16
+00000011        14
+00101000        12
+11111111        12
+</code></p>
+
+<p>Affine</p>
+<p><code>
+10011000        -12
+00010001        -14
+00010011        -14
+11101100        -18
+00000001        -90
+</code></p>
+
+<p>While no strong linear relationship exists, note the very high affine bias of -90 / 256 ~ -35.1% for the input mask <code>0x01</code>. Further, the input mask also has only one bit set, which means we can develop correlations using only one input bit. We can look for similar correlations with other single-bit output masks; for example, here is the result for <code>0x40</code>:</p>
+
+<p>Linear</p>
+<p><code>
+01000000        102
+01100001        12
+00001001        10
+00101110        10
+01110100        10
+</code></p>
+
+<p>Affine</p>
+<p><code>
+11110100        -10
+11111000        -10
+00011100        -12
+01101111        -12
+11011011        -12
+</code></p>
+
+<p>In this case, there are no strong affine relationships, but there is a very strong linear correlation with bias 102 / 256 ~ 39.8% with the input mask <code>0x40</code>. This means that for a random output, <code>XOR(output & 0x40, input & 0x40) = 0</code> occurs with probability 50% + 39.8% ~ 89.8%. This is quite substantial. We can tabulate the results:</p>
+
+<table>
+    <tr>
+        <th>Input Mask, Output Mask</th>
+        <th>Final Count</th>
+        <th>Linear Bias</th>
+        <th>Probablility</th>
+    </tr>
+    <tr>
+        <td><code>0x01, 0x01</code></td>
+        <td>-90</td>
+        <td>-35.1%</td>
+        <td>85.1% affine</td>
+    </tr>
+    <tr>
+        <td><code>0x02, 0x02</code></td>
+        <td>94</td>
+        <td>36.7%</td>
+        <td>86.7% linear</td>
+    </tr>
+    <tr>
+        <td><code>0x04, 0x04</code></td>
+        <td>-86</td>
+        <td>-33.6%</td>
+        <td>83.6% affine</td>
+    </tr>
+    <tr>
+        <td><code>0x08, 0x08</code></td>
+        <td>-92</td>
+        <td>-35.9%</td>
+        <td>85.8% affine</td>
+    </tr>
+    <tr>
+        <td><code>0x10, 0x10</code></td>
+        <td>86</td>
+        <td>33.6%</td>
+        <td>83.6% linear</td>
+    </tr>
+    <tr>
+        <td><code>0x20, 0x20</code></td>
+        <td>-98</td>
+        <td>-38.3%</td>
+        <td>88.3% affine</td>
+    </tr>
+    <tr>
+        <td><code>0x40, 0x40</code></td>
+        <td>102</td>
+        <td>39.8%</td>
+        <td>89.8% linear</td>
+    </tr>
+    <tr>
+        <td><code>0x80, 0x80</code></td>
+        <td>-96</td>
+        <td>-37.5%</td>
+        <td>87.5% affine</td>
+    </tr>
+</table>
+
+<p>Now let's see how these correlations can help us learn the key. Let's follow a path of an arbitrary plaintext bit, say, <code>pt[0]</code>. It's XORed with <code>sk1[0]</code>, then passed through the first sbox. We know there exists a strong correlation (bias = -35.1%) between the lsb of the input and the lsb of the output for this sbox. After the sbox, the bit is permuted to bit position 1 and XORed with <code>sk2[1]</code>. Now, this is passed through another sbox, but we know there is a strong correlation (bias = 36.7%) between it and the second bit of the output. Now, this is permuted to bit position 57 and XORed with <code>sk1[57]</code>. We can summarize the path as follows:</p>
+
+<p><code>pt[0] -XOR-> u1[0] -SPXOR-> u2[1] -SPXOR-> u3[57] -SPXOR-> u4[54]</code></p>
+
+<p>So, we should expect <code>pt[0]</code> and <code>u4[54]</code> to be strongly correlated. <i>How</i> strongly, precisely? Assuming the sboxes are independent, we easily see that the overall bias should be of magnitude |2^(3 - 1) * (-35.1%) * (36.7%) * (36.7%))| ~ 18.9%. Note that we do not know the <i>sign</i> of this bias because this would entail knowing the precise values of the subkey bits that we added along the way.</p>
+
+<p>Conceivably at this point, we can deduce the (permuted) last subkey added to the bits coming out of the final sbox. We can XOR all 256 possible key values with the ciphertexts bits <code>[37, 11, 12, 56, 34, 29, 46, 24]</code>, the second-to-last slice of 8 bytes. We then reverse the operation of the sbox to get a predicted value of <code>u4[54]</code>. Finally, we XOR that prediction with each plaintext <code>pt[0]</code> and observe this value's probability bias away from the no-information case of 50%.</p>
+
+<pre class = "python">
+ptbit = 0
+ctbits = [37, 11, 12, 56, 34, 29, 46, 24]
+counts = {}
+for tpsk in range(0x100):
+use = SIZE // 10            #number of pt-ct pairs
+count = -use // 2           #don't use all; takes too long
+for i in range(use):
+    # plaintext, ciphertexts saved into binary file, read into corresponding variables
+    pt = format(int.from_bytes(plaintexts[8 * i: 8 * (i + 1)], "big"), "064b")
+    ct = format(int.from_bytes(ciphertexts[8 * i: 8 * (i + 1)], "big"), "064b")
+    # plaintext bit that gets transformed
+    p41 = int(pt[ptbit], 2)
+    # reverse the final permutation, XOR, and sbox
+    u41 = (sbox.index(int(''.join(ct[v] for v in ctbits), 2) ^ tpsk) >> 1) & 1
+    if u41 ^ p41 == 0:
+        count += 1
+
+counts[tpsk] = count
+</pre>
+
+<p>If the subkey we predict is correct, then we should observe a high bias - the linear approximation should be apparent. Using only 10% of the given plaintext-ciphertext pairs (6553), we get the following partial subkey-bias pairs:</p>
+
+<p>Linear</p>
+<p><code>
+01001000        1593
+10010000        1087
+11100100        1019
+01011101        1013
+11001100        1004
+</code></p>
+
+<p>Affine</p>
+<p><code>
+10001010        -1075
+01010010        -1071
+00111011        -1044
+01100011        -1032
+10111011        -1007
+</code></p>
+
+<p>The results show that one of the partial subkeys, <code>01001000</code>, has a very large linear bias (24.3%) compared to the others (the largest of which are around 16%). This means that this is very likely the subkey at the indices listed above. Note that the bias value magnitude is higher than we predicted <i>assuming the sboxes are independent</i> - the sboxes are clearly not independent. But nonetheless, we can still extract subkey bits. We could take another path, say, starting at <code>pt[1]</code>, which proceeds as follows:</p>
+
+<p><code>pt[1] -XOR-> u1[1] -SPXOR-> u2[57] -SPXOR-> u3[54] -SPXOR-> u4[46]</code></p>
+
+<p>which after permutation and XOR ends up in the third-to-last block of the ciphertext. We thus use the third-to-last slice of the permutation <code>[18, 39, 58, 42, 8, 20, 33, 27]</code> to select the ciphertext values, XOR with each possible partial subkey, reverse the sbox, and get statistics.</p>
+
+<p>Linear</p>
+<p><code>
+11011010        1013
+00110011        988
+10000010        975
+11101011        973
+10110111        951
+</code></p>
+
+<p>Affine</p>
+<p><code>
+11110001        -1508
+00101001        -1023
+10000001        -936
+00000101        -928
+00110101        -925
+</code></p>
+
+<p>Here, we see a large affine relationship (bias -23.0%) and deduce that the last subkey's bits at those indices are very likely <code>11110001</code>. We can continue this process to get the entire subkey; its ASCII representation is <code>151198fd</code>.</p>
+
+<p>The gig is up - we use this subkey to reverse the last round of decryption and obtain a new set of "ciphertexts". We can perform the same correlations, this time with only three rounds to recover the other half of the key, <code>21d9b1a9</code>.</p>
+
+<h4>Flag</h4>
+
+<p><code>flag{151121d998fdb1a9}</code></p>
+
+<h4>References</h4>
+<ol>
+    <li><p>Heys, H. M. <a href = "http://www.cs.bc.edu/~straubin/crypto2017/heys.pdf" target = "_blank">"A Tutorial on Linear and Differential Cryptanalysis"</a>, self publication.</p></li>
+</ol>

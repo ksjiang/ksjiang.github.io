@@ -1,0 +1,87 @@
+<!--Solve date: 04/17/2021-->
+
+<h1>UMD CTF 2021 - Willow (Raspberry Pi)</h1>
+
+<h2>Reverse Engineering</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>High-Level Analysis</h5>
+
+<p>It is pretty rare to see a Raspberry Pi challenge incorporated in a regular CTF category, but it is a welcome deviation from the relatively predictable challenge archetypes. To begin, we use the QEMU-kernel version of the image, since it takes out a lot of the distracting boot information and operating system code. Running <code>strings</code> quickly shows us that we need to find a password to get the message <code>Holy taxation, you're right again Batman!</code>.</p>
+
+<h5>Low-Level Analysis</h5>
+
+<p>Probably the most difficult part of reverse engineering embedded-hardware "bare-metal" binaries (aside from the obvious architecture differences) is identifying the standard "library" functions. It is especially tricky without an understanding of the address map of the device, but we lucky enough to be provided with a specification document with those addresses. Because the binary is so small, it is easy to guess some of these functions by making careful observations of their behavior, then verifying them with the documentation. For instance, at address <code>0x180</code>, we see the following linear sequence of code:</p>
+
+<img class = "small" src = "./images/umd2021_willow_1.png"/>
+
+<p>I have already labeled the function with what I believe it does, but let's break it down without any unreasonable prior assumptions. First, <code>R2</code> is loaded with an address that appears to be from the peripheral map (<code>0x20215000</code>). A loop is entered where a value at <code>R2 + 0x54 = 0x20215054</code> is <i>polled</i> until its value becomes <code>1</code>. Then, the byte at <code>R2 + 0x40 = 0x20215040</code> is loaded into <code>R0</code> and compared with <code>0xd</code>, which, curiously, is the "carriage return" character. If the character is not carriage return, Bit 5 of <code>0x20215054</code> is polled before writing the character back to the buffer - this is essentially an <i>echo</i> - and returning the character to the caller. (If the character is carriage return, the <code>0xa</code> - newline - is first written to the buffer, followed by the carriage return, and newline is returned). Let's take a closer look at these operations:</p>
+
+<img class = "small" src = "./images/umd2021_willow_2.png"/>
+
+<p>These registers control UART behavior, which is what we expected. Let's look specifically at <code>AUX_MU_LSR_REG</code>:</p>
+
+<img class = "small" src = "./images/umd2021_willow_3.png"/>
+
+<p>The LSB indicates whether data is ready to be read. Bit 5 indicates whether the transmit buffer can be written to. These agree with our observations before, and we can safely conclude that this function gets a character (hence, <code>getc</code>).</p>
+
+<p>Another library function appears to call <code>getc</code> in a loop, exiting if a newline is returned:</p>
+
+<img class = "small" src = "./images/umd2021_willow_4.png"/>
+
+<p>This is very similar to <code>fgets</code>, where input is taken from standard input. Note that it leverages abstraction and does not have to access the UART registers directly, but is indeed still a "libary" function.</p>
+
+<p>What with <code>fgets</code> and <code>getc</code>, we should also expect there to be functions that print output (other than just echoing input); otherwise, how would the strings get printed? No surprise here - another function accesses the registers used in <code>getc</code>, but exclusively tests Bit 5 of the data status register. Note that it also has special functionality for handling carriage returns.</p>
+
+<img class = "small" src = "./images/umd2021_willow_5.png"/>
+
+<p>Identifying these three standard functions is sufficient to completely understand the challenge. The program reads 64 bytes of input into a stack buffer, transforms that input, then checks it against a buffer. The transformation is rather involved, and it is composed of many bit-level manipulations, including shifts and flippings of bit order. But after staring at it for a while, we learn that it is breaking each byte down into two parts, then using a rule determined by a buffer in memory to output another half-byte. These half-bytes are then recombined at the end. Essentially, this is just a substitution, with the ruleset shown below.</p>
+
+<img class = "small" src = "./images/umd2021_willow_6.png"/>
+
+<p class = "caption">Transformation of the higher nibble.</p>
+
+<img class = "small" src = "./images/umd2021_willow_7.png"/>
+
+<p class = "caption">Substitution rule (nibble-wise).</p>
+
+<p>A very strange thing about this substitution is that it is not one-to-one. Specifically, there are two values that would map to a nibble of <code>0</code> (namely, <code>4</code> and <code>0xf</code>), and no value that maps to <code>8</code>. However, this will prove to be a minor issue, since the flag can be easily guessed from the transformation of other nibbles.</p>
+
+<p>Following substitution, the bytes are returned to the buffer following <code>xor</code> with either the previous byte, or with <code>0xff</code> (essentially, a bitwise inversion) in the case of the first byte. This is known more commonly as a cascade and is easily invertible.</p>
+
+<img class = "small" src = "./images/umd2021_willow_8.png"/>
+
+<p>The transformation algorithm is invertible, and the flag can now easily be found by performing the inverse operation on the encoded bytes.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+
+with open("./willow_ct.bin", "rb") as f:
+    ct = f.read()
+
+def sbox(x):
+    tx = [7, 5, 0xc, 0xf, 0, 9, 0xe, 6, 0xd, 3, 0xa, 0xb, 4, 1, 2, 0x10]
+    x %= 0x100
+    return (tx.index((x >> 4) & 0xf) << 4) | (tx.index((x) & 0xf))
+
+B = [b for b in ct]
+A = [b for b in ct]
+A[0] ^= 0xff
+for i in range(1, len(A)):
+    A[i] ^= B[i - 1]
+
+print([hex(Aa) for Aa in A])
+pt = [sbox(Aa) for Aa in A]
+print([hex(pta) for pta in pt])
+print(bytes(pt))
+</pre>
+
+<p>Note: <code>./willow_ct.bin</code> is extracted from the binary with IDA, file offset <code>0x868 - 0x886</code>.</p>
+
+<h4>Flag</h4>
+
+<p><code>UMDCTF-{WellthatWasSomething?}</code></p>

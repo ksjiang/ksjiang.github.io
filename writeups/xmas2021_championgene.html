@@ -1,0 +1,127 @@
+<!--Solve date: 12/15/2021-->
+
+<h1>X-Mas CTF 2021 - Champion Gene</h1>
+
+<h2>Reverse Engineering - 500 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Program Behavior</h5>
+
+<p>Disclaimer: I did not solve this challenge by the time the first weekend of the CTF had concluded. I present here my solution process as a way to document some C++ reverse engineering strategies that may be of use in other reverse engineering endeavors.</p>
+
+<p>This challenge features a <i>genetic algorithm</i>, which is essentially an evolutionary algorithm where three processes - selection, crossover, and mutation - successively generate "fitter" genes. Here, "genes" is general; in computer science contexts, they can, for instance, represent the solution to an optimization problem.</p>
+
+<p>We are provided with a binary that requests a seed and gives a target value to reach. The seed that we input is transformed into a binary sequence and is a maximum of 8 * 71 = 568 bits long. This is initialized as a "gene". Then, 2059 other genes are randomly generated, each also 568 bits long.</p>
+
+<img class = "small" src = "./images/xmas2021_championgene_1.png"/>
+
+<p class = "caption">Figure 1. Generation of genes. The first is directly converted from the user input. The others are randomly generated.</p>
+
+<p>While it isn't necessarily pertinent to the challenge, the randomly-generated genes are constructed with each bit being 1 with probability 1 / 3 (and 0 with probability 2 / 3).</p>
+
+<p>Following gene generation, the <i>fitnesses</i> of the first 2000 genes are computed. The formula for the fitness is computed as follows</p>
+
+<ul>
+    <li><p>If the sum of the <i>weights</i> associated with the set bits is less than or equal the quantity 5483, then the fitness is the sum of the <i>values</i> of the set bits.</p></li>
+    <li><p>If the sum of the weights exceeds the quantity 5483, then the fitness is the negative difference between the sum of the weights and the quantity 5483.</p></li>
+</ul>
+
+<p>Note that the highest fitnesses are associated with subsets that maximize the total value while maintaining a total weight below the threshold. This is in fact exactly the formulation of the well-known 0-1 Knapsack Problem, about which more can be read <a href = "https://en.wikipedia.org/wiki/Knapsack_problem#0-1_knapsack_problem" target = "_blank">here</a>. Further reversing the genetic algorithm implemented in the given binary reveals the following details:</p>
+
+<ol>
+    <li><p>The fitness of the genes are calculated, as above.</p></li>
+    <li><p>The first 2000 genes in the list are sorted in decreasing order according to the fitness values.</p></li>
+    <li><p>Check if there has been an improvement in fitness from the previous best (initial best is 0). If so, print the current iteration number and the current best fitness.</p></li>
+    <li><p>Check if the fitness of the fittest gene meets the target value requirement. If so, end algorithm.</p></li>
+    <li>
+        <p>Evolve next generation according to the following rules.</p>
+        <ol>
+            <li><p>Retain the best 1000 genes (elitism).</p></li>
+            <li>
+                <p>For <code>i, j in range(32)</code>, replace gene <code>1000 + 32 * j + i</code> with the gene created by the following steps:</p>
+                <ol>
+                    <li><p>Crossover the first half of gene <code>j</code> and the second half of <code>i</code>.</p></li>
+                    <li><p>Mutate (flip) each bit of the gene with probability 0.03.</p></li>
+                </ol>
+            </li>
+        </ol>
+    </li>
+    <li><p>Go back to Step 1.</p></li>
+</ol>
+
+<img class = "small" src = "./images/xmas2021_championgene_2.png"/>
+
+<p class = "caption">Figure 2. Crossover step.</p>
+
+<img class = "small" src = "./images/xmas2021_championgene_3.png"/>
+
+<p class = "caption">Figure 3. Mutation step.</p>
+
+<p>This algorithm doesn't seem to be very effective unless the initial genes are good: the selection rule only allows the best 32 of the total 2000 genes in the pool to contribute to the children genomes (which makes up half the population!) of the next generation. We solve the problem deterministically using dynamic programming (DP).</p>
+
+<h5>Solving the Problem with DP</h5>
+
+<p>Genetic algorithms are the really right approach to this type of problem, despite the one that was given to us being poorly implemented. Alternative methods include bruteforce (<i>clearly</i> not viable here, as the search space is a whopping <code>2**568</code>) and dynamic programming (DP). The time complexity of DP scales as the product of the number of items in the bag and the weight of the items. While seemingly polynomial, theoretical computer scientists are quick to point out that the complexity of DP for the knapsack problem is actually exponential. The reason is because the <i>size of the input</i> is actually <code>N lg W</code>, where <code>N</code> is the number of items and <code>W</code> is the weight range for each item, so the scaling <code>O(N W)</code> appears as <code>O(N exp(lg W))</code>. However, the weights considered here (8 bits - for a range of 256) are not large, so DP should work well here. For very large weights - say, on the order of 2**64 - DP becomes impractical and genetic algorithms begin to shine.</p>
+
+<p>Briefly, DP works by dividing a problem into smaller sub-problems (really, this is just a generalization of the concept of recursion). These sub-problems are <i>similar</i> to the original problem. Consider the sub-problem of optimizing the total value of a subset of the set of items <code>{0, 1, ..., m}</code> while not exceeding some weight <code>k</code>. Suppose the solution to this problem is <code>DP(m, k)</code>. (Note that the problem we want to solve is <code>DP(m = 567, k = 5483)</code>.) Consider adding in <code>m + 1</code> to the set of available items and the quantity <code>DP(m + 1, k)</code>. What is it? Note that we can either choose to include the new item or not. If we don't include the item, then the optimal value is simply <code>DP(m, k)</code>, since this is by definition the best solution if we had ignored the new item from the get go. If we do include the item, the optimal value is <code>V_{m + 1} + DP(m, k - W_{m + 1})</code>: we are now accumulating the value of the new item and retaining the optimal solution to the bag reduced by the weight of the new item. The higher of these two options wins.</p>
+
+<p>Note that the quantity <code>k - W_{m + 1}</code> is potentially negative, indicating that there was not enough room in the bag to accomodate item <code>m + 1</code>. In this case, we are forced to leave the item out. The base case of this problem is when the set <code>{0, 1, ..., m}</code> is empty. The value in these cases is trivially 0, since no items can be in the bag. That is to say, <code>DP(-1, k) = 0</code> for all <code>k</code>. We can then easily compute <code>DP(0, k)</code>: <code>DP(0, k &lt; W_0) = 0</code> and <code>DP(0, k &gt;= W_0) = W_0</code>.</p>
+
+<p>The rest of the problem follows naturally; see the code below for the solution, which is surprisingly short. The weights and values are extracted from the given binary and saved as files for easy access.</p>
+
+<h4>Solve Script</h4>
+
+<pre class = "python">
+import struct
+
+# read weights
+with open("./weights", "rb") as f:
+    weights = [_ for _, in struct.iter_unpack("&lt;I", f.read())]
+
+# read values
+with open("./values", "rb") as f:
+    values = [_ for _, in struct.iter_unpack("&lt;I", f.read())]
+
+n = len(weights)
+assert n == len(values), "Must have the same number of weights and values"
+maxw = 5483
+
+# form the DP solution array
+# the last row represents DP(-1, k) = 0, the value when we
+# are restricted to a set with no items
+DP = [[0] * (maxw + 1) for _ in range(n + 1)]
+
+for m in range(n):
+    for k in range(maxw + 1):
+        if k &lt; weights[m]:
+            h = 0
+        else:
+            h = values[m] + DP[m - 1][k - weights[m]]
+
+        DP[m][k] = max(DP[m - 1][k], h)
+
+print("Maximum value: %d" % (DP[n - 1][maxw]))
+
+# now, retrace steps to get the optimal subset
+flagbits = ''
+curcoord = (n - 1, maxw)
+for m in reversed(range(n)):
+    if DP[curcoord[0]][curcoord[1]] == DP[curcoord[0] - 1][curcoord[1]]:
+        flagbits = '0' + flagbits
+        curcoord = (curcoord[0] - 1, curcoord[1])
+    else:
+        flagbits = '1' + flagbits
+        assert curcoord[1] >= weights[m], "Wtf?"
+        curcoord = (curcoord[0] - 1, curcoord[1] - weights[m])
+
+flagnum = int(flagbits, 2)
+flag = flagnum.to_bytes((flagnum.bit_length() + 7) // 8, "big").decode("utf-8")
+print("Flag: %s" % (flag))
+</pre>
+
+<h4>Flag</h4>
+
+<p><code>X-MAS{60b0c8849039195e5b0bca3e2631b848d9096fdaa6098c7e87670e0bdcfb9f4a}</code></p>

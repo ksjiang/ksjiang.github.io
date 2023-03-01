@@ -1,0 +1,118 @@
+<!--Solve date: 07/11/2020-->
+
+<h1>pwnable.kr - ascii_easy</h1>
+
+<h2>Rookiss - 33 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>We begin by noting that while this challenge is quite nice in that we can directly input all of our payloads through the keyboard, it is also not very practical because it is unlikely that an application will map at a "printable" address. Let's first break down the binary. At the entry of <code>main()</code>, we align the stack to a multiple of 16, push a copy of the return address, perform a standard entry by setting up the base pointer, saving registers, and allocating stack space for the local context. Next, we compare the number of command line arguments with 2. Recall that by convention, the first command line argument is the program name. So really, we are looking for one argument following the program name.</p>
+
+<img src = "./images/pwnable_ascii_easy_1.png"/>
+
+<p class = "caption">Figure 1. Entry of <code>main()</code> procedure.</p>
+
+<p>Next we open <code>libc-2.15.so</code> and <code>fstat()</code> it. If an error is encountered, a message is printed. Otherwise we continue and <code>mmap()</code> the file into the address space. The address argument (which serves as a hint to the kernel about where to start the mapping) is <code>0x5555e000</code>. "Luckily," this choice allows a lot of the library to have printable addresses: <code>chr(0x55) == U</code> and <code>chr(0x56) == V</code>. If the mapping fails or returns some address other than the requested one, we print a message and leave.</p>
+
+<img src = "./images/pwnable_ascii_easy_2.png"/>
+
+<p class = "caption">Figure 2. Mapping <code>libc</code> into the address space.</p>
+
+<p>After the library is successfully mapped, we enter a loop. The loop checks every character in the second argument by comparing to <code>0x20 == ord(' ')</code> and <code>0x7f == ord('`')</code>. The character's value must lie strictly between these two values. Otherwise we fail.</p>
+
+<p>If all characters are ASCII-printable, then we call a vulnerable function that copies the second command line argument to <code>ebp - 0x1c</code> in the vulnerable function. As there is no length check, this is a classic stack buffer-overflow where we have complete control over program execution.</p>
+
+<img src = "./images/pwnable_ascii_easy_3.png"/>
+
+<p class = "caption">Figure 3. Function <code>vuln()</code> uses the dangerous function
+<code>strcpy()</code>.</p>
+
+<p>There are several ways we can proceed. In any case, we wish to call an 
+<code>exec</code>-type function with argument <code>/bin/sh</code>. Typically we use 
+<code>execve()</code>, but unfortunately its address is at <code>0x556165e0</code>, which is too far away from a printable address. Luckily, <code>execlp()</code> is at address <code>0x55616a80</code>, which is not printable, but if we jump to 2 bytes before it we get <code>0x55616a7e</code>, which "translates" to <code>~jaU</code>. We can jump to that location because it is padded with <code>NOP</code> instructions from the previous procedure.</p>
+
+<img src = "./images/pwnable_ascii_easy_4.png"/>
+
+<p class = "caption">Figure 4. Our branch target, <code>execlp()</code>.</p>
+
+<p>According to the Linux manual page for <code>execlp()</code> and related functions, we can see that the program arguments are passed not as a double pointer (as we usually see with <code>execve()</code>'s <code>char** argv</code>), but as a variable list of arguments ending with a NULL pointer. The first argument needs to sepcify a path (either absolute or relative) to the executable file. We would like to execute <code>/bin/sh</code>, but the address of that string is <code>0x556bb7ec</code>, which contains two unprintable bytes. That's not a huge problem, though, because we can create a file that <i>is</i> referenced by a relative path located at a printable address and contains a shell script to simply spawn a shell. Scanning through the relative locations in <code>libc</code>, we encounter several candidates. We will just use the first, located at <code>0x556c2b59</code>, which points to the string <code>./sysdeps/unix/sysv/linux/internal_statvfs.c</code>, and whose address translates to <code>Y+lU</code>. Of course, we must actually create this file, which we do under a subdirectory in <code>/tmp</code>.</p>
+
+<p>Now, we must terminate our list of arguments with a null pointer. Obviously we cannot input null characters, so we must rely on a null dword already on the stack. Luckily, <code>fstat()</code> will produce a null byte in the upper dword of the device ID <code>st_dev</code> field, so we just need to write <i>up</i> to that point. To determine how many words we need to write, we first note that the overwritten return address in <code>vuln()</code> is located at <code>ebp - 0x8c</code>, where <code>ebp</code> is the frame pointer of <code>main()</code>. (Why is this? At the entry point of <code>main()</code>, we <code>push</code> two dwords on the stack, then subtract <code>0x70</code>, which puts the "normal" <code>esp</code> at <code>esp - 0x78</code>. Before each function call, the stack pointer is decremented such that the first argument ends up aligned with a multiple of 16. For <code>vuln()</code>, there is only one dword argument, so we decrement <code>esp</code> to <code>ebp - 0x88</code>. Thus, the call will place the return address at <code>ebp - 0x8c</code>.)</p>
+
+<p>The <code>stat</code> buffer is at <code>ebp - 0x6c</code>, and the null dword will be at offset 4 of this buffer, of <code>ebp - 0x68</code>. It doesn't really matter what we specifically write, as long as the values are actual string pointers. I chose a random location <code>0x556d2840</code>, which translates to <code>@(mU</code>. The reason the specific string doesn't matter is because they will be passed to our shell script, which doesn't even use them. The actual shell that we get to interact with is independent of the shell that runs our script.</p>
+
+<img src = "./images/pwnable_ascii_easy_5.png"/>
+
+<p class = "caption">Figure 5. Stack layout after overflow.</p>
+
+<p>Running this exploit, however, we find that it results in a segfault, because the mapped library is not the actual <code>libc</code> used by the program; the default environment pointer, <code>environ_ptr_0</code> is not valid. To fix this, we can construct a ROP chain to perform an arbitrary write, then write an address that points to <code>NULL</code> to that location. A suitable tool for searching for gadgets is <a href = "https://github.com/JonathanSalwan/ROPgadget" target = "_blank"> <code>ROPGadget</code></a>, available with the <code>Capstone</code> toolkit. I came up with the following set of useful, printable gadgets.</p>
+
+<table>
+    <tr>
+        <th>Virtual Address</th>
+        <th>Gadget</th>
+        <th>Comments</th>
+        <th>Side Effects</th>
+    </tr>
+    <tr>
+        <td><code>0x555d6225</code></td>
+        <td><code>mov [eax], edx; ret</code></td>
+        <td>Allows us to perform an arbitrary write to memory.</td>
+        <td>None</td>
+    </tr>
+    <tr>
+        <td><code>0x555f3555</code></td>
+        <td><code>pop edx; xor eax, eax; pop edi; ret</code></td>
+        <td>Allows us to move ASCII values into <code>edx</code>.</td>
+        <td>Clears <code>eax</code>.</td>
+    </tr>
+    <tr>
+        <td><code>0x555f3927</code></td>
+        <td><code>add eax, edi; pop edi; ret</code></td>
+        <td>Allows us to change the value of <code>eax</code> arbitrarily. (Very useful if we want to place non-ASCII values in <code>eax</code>.)</td>
+        <td>None</td>
+    </tr>
+    <tr>
+        <td><code>0x555f7969</code></td>
+        <td><code>mov eax, edi; pop esi; pop edi; ret</code></td>
+        <td>Allows us to move printable values into <code>edi</code>, and to move values from <code>edi</code> to <code>eax</code>.</td>
+        <td>None</td>
+    </tr>
+</table>
+
+<p>Now, consider the following ROP chain.</p>
+
+<img src = "./images/pwnable_ascii_easy_6.png"/>
+
+<p class = "caption">Figure 6. Corrected ROP chain, avoiding invalid environment. Again, yellow font represents stack memory that <i>we</i> overwrite. The list will be properly terminated with a <code>NULL</code> field from the call to <code>fstat()</code>.</p>
+
+<p>First, we load the address we want to write, which points to <code>NULL</code> into <code>edx</code>. At the same time, we also initialize <code>edi</code> to <code>0x71255a60</code>, to begin forming the address we want to write this pointer to. As <code>environ_ptr_0</code> is located at <code>0x55700f20</code>, it is not possible to write that address directly.</p>
+
+<p>Next, we load the value into <code>edi</code> into <code>eax</code>. At the same time, we load the next value of <code>edi</code>, which is <code>0x72255a60</code>.</p>
+
+<p>The next gadget adds <code>edi</code> to <code>eax</code>, and pops the final addend, <code>0x72255a60</code>, into <code>edi</code>. The final <code>add</code> gadget will make <code>eax = 0x55700f20</code>. After <code>eax</code> is properly constructed, we move <code>edx</code>, which still holds the value from the first gadget, into the address pointed to by <code>eax</code>, <code>environ_ptr_0</code>. We complete the chain with our original payload. It turns out that the buffer will be terminated by a field in <code>fstat()</code> that is <code>NULL</code>. We don't even need to supply any filler program arguments.</p>
+
+<h4>Payload</h4>
+
+<p>Python script to generate printable payload:</p>
+
+<pre class = "python">
+
+from pwn import *
+
+print(b"01234567890123456789012345678901" + p32(0x555f3555) + p32(0x55575837) + p32(0x71255a60) + p32(0x555f7969) + b"0000" + p32(0x72255a60) + p32(0x555f3927) + p32(0x72255a60) + p32(0x555f3927) + b"0000" + p32(0x555d6225) + p32(0x55616a7e) + b"0000" + p32(0x556c2b59) + p32(0x556c2b59))
+</pre>
+
+<p>The exploitation done in the terminal (no script needed to execute payload because we have a printable exploit). Just make sure to escape special characters by using single quotes (then escaping the actual single quotes).</p>
+
+<pre class = "bash">
+mkdir -p sysdeps/unix/sysv/linux
+printf "#!/bin/sh\n\n/bin/sh" > ./sysdeps/unix/sysv/linux/internal_statvfs.c
+~/ascii_easy '01234567890123456789012345678901U5_U7XWU`Z%qiy_U0000`Z%r'\''9_U`Z%r'\''9_U0000%b]U~jaU0000Y+lUY+lU'
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>984537edcc5707b357526ae06a31bf7b34a688842de43472e3c80afb80d65ac0</code></p>

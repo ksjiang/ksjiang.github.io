@@ -1,0 +1,19 @@
+<!--Add date: 06/11/2021-->
+
+<h1>Petya Kernel</h1>
+
+<h2>Reverse Engineering Demo</h2>
+
+<h3>Demo by YR81</h3>
+
+<p>Petya is a ransomware from 2016 that probably originated in and primarily targeted Ukraine. It is the precursor to a large number of ransomwares, perhaps most notably NotPetya from 2017, which is estimated to have caused a total of more than 10 billion USD in damages. Among causing other effects in computer systems using Microsoft Windows, NotPetya disabled the radiation monitoring unit at the Chernobyl nuclear site. It is a rather advanced malware in the sense that it overwrites the master boot record of healthy drives connected to a computer and injects a mini kernel that performs filesystem encryption. It demands payment in Bitcoin for decryption, which is also a functionality of the kernel.</p>
+
+<p>Here, we dissect relevant parts of the Petya kernel, which was obtained by running the sample from <a href = "https://github.com/ytisf/theZoo/tree/master/malwares/Binaries/Ransomware.Petya" target = "_blank">Malware Zoo</a> in an isolated sandbox and extracting and decoding the <code>.xxxx</code> section from the executable in memory. (We may analyze this unpacked sample in the future, but here we only focus on the kernel.) The decoding process is quite simple and the relevant part of the unpacked executable is shown below.</p>
+
+<img class = "small" src = "./images/petya_1.png"/>
+
+<p class = "caption">Figure 1. Decoding of <code>.xxxx</code> section in the unpacked Petya executable.</p>
+
+<p>To be clear, even though the Petya kernel (17 sectors = 8704 bytes, including all data) is small compared to that of an actual operating system, it is still large enough that a full line-by-line analysis is not desirable. Instead, we focus on the general structure of the kernel, the interdependencies among the functions, and a few functions that are central to its operation. We note again that this is indeed a kernel, so instead of accessing common operating system APIs, the malware reaches out to system interrupts to perform tasks such as reading the keyboard and printing characters to the screen. Also, it operates under 16-bit real mode.</p>
+
+<p>Since Petya is a ransomware, we might be interested in finding the cryptographic functions that make up its core. Locating these functions can be a challenge, but we know that these functions are called by both the encryptor and decryptor. It is most easily identified when the victim enters a key and it checks the key by decrypting a small block of memory and comparing it with a known value.</p>

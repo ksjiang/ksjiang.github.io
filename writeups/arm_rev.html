@@ -1,0 +1,106 @@
+<!--Writeup date: 08/11/2021-->
+
+<h1>ARM Reverse Engineering Tutorial</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<h4>Overview</h4>
+
+<p>Oftentimes, we have to walk away from the realm of x86-64 and analyze binaries in another architecture. The architecture we see perhaps most often outside x86-64 is ARM, a reduced instruction-set architectue that has always enjoyed dominance in embedded systems and is starting to see increased popularity in dedicated computing as well. Here, I would like to reverse engineer some common library functions compiled to ARM.</p>
+
+<h4>String Functions</h4>
+
+<h5><code>strncmp()</code></h5>
+
+<pre class = "css">
+.text:0000000000405EB0 ; =============== S U B R O U T I N E =======================================
+.text:0000000000405EB0
+.text:0000000000405EB0 ; X0 -> buf1
+.text:0000000000405EB0 ; X1 -> buf2
+.text:0000000000405EB0 ; X2 -> size
+.text:0000000000405EB0
+.text:0000000000405EB0 strncmp                                 ; CODE XREF: sub_400338+D4p
+.text:0000000000405EB0                                         ; sub_400338+194p
+.text:0000000000405EB0                 CBZ             X2, loc_405F08 ; if X2 == 0, return 0
+.text:0000000000405EB4                 LDRB            W4, [X0] ; W4 = buf1[0]
+.text:0000000000405EB8                 LDRB            W6, [X1] ; W6 = buf2[0]
+.text:0000000000405EBC                 CBZ             W4, loc_405F10 ; W4 is already 0
+.text:0000000000405EC0                 SUBS            X2, X2, #1 ; X2 = index of last char
+.text:0000000000405EC4                 MOV             X3, #1  ; i = 1;
+.text:0000000000405EC8                 CCMP            W6, #0, #4, NE
+.text:0000000000405ECC                 CCMP            W4, W6, #0, NE
+.text:0000000000405ED0                 B.NE            loc_405F00
+.text:0000000000405ED4                 NOP
+.text:0000000000405ED8
+.text:0000000000405ED8 loc_405ED8                              ; CODE XREF: strncmp+4Cj
+.text:0000000000405ED8                 LDRB            W4, [X0,X3] ; W4 = buf1[i]
+.text:0000000000405EDC                 LDRB            W6, [X1,X3] ; W6 = buf2[i]
+.text:0000000000405EE0                 CMP             W6, #0
+.text:0000000000405EE4                 CCMP            W4, W6, #0, NE
+.text:0000000000405EE8                 CBZ             W4, loc_405F10 ; W4 is already 0
+.text:0000000000405EEC                 CSET            W5, EQ  ; W5 = (W4 == W6) if W6 else 0
+.text:0000000000405EF0                 CMP             X2, X3
+.text:0000000000405EF4                 CSEL            W5, W5, WZR, NE
+.text:0000000000405EF8                 ADD             X3, X3, #1 ; i++;
+.text:0000000000405EFC                 CBNZ            W5, loc_405ED8 ; W4 = buf1[i]
+.text:0000000000405F00
+.text:0000000000405F00 loc_405F00                              ; CODE XREF: strncmp+20j
+.text:0000000000405F00                 SUB             W0, W4, W6
+.text:0000000000405F04
+.text:0000000000405F04 locret_405F04                           ; CODE XREF: strncmp+68j
+.text:0000000000405F04                 RET
+.text:0000000000405F08 ; ---------------------------------------------------------------------------
+.text:0000000000405F08
+.text:0000000000405F08 loc_405F08                              ; CODE XREF: strncmpj
+.text:0000000000405F08                 MOV             W0, #0  ; if X2 == 0, return 0
+.text:0000000000405F0C                 RET
+.text:0000000000405F10 ; ---------------------------------------------------------------------------
+.text:0000000000405F10
+.text:0000000000405F10 loc_405F10                              ; CODE XREF: strncmp+Cj
+.text:0000000000405F10                                         ; strncmp+38j
+.text:0000000000405F10                 MOV             W4, #0  ; W4 is already 0
+.text:0000000000405F14                 SUB             W0, W4, W6 ; return -W6;
+.text:0000000000405F18                 B               locret_405F04
+.text:0000000000405F18 ; End of function strncmp
+.text:0000000000405F18
+.text:0000000000405F18 ; ---------------------------------------------------------------------------
+</pre>
+
+<p>Looking at the above, we may at first be overwhelmed by all the conditional instructions, but this is unfortunately typical of RISC assembly. Let's take the following group of instructions as example.</p>
+
+<pre class = "css">
+.text:0000000000405EC8                 CCMP            W6, #0, #4, NE
+.text:0000000000405ECC                 CCMP            W4, W6, #0, NE
+.text:0000000000405ED0                 B.NE            loc_405F00
+</pre>
+
+<p>In ARM, <code>CCMP</code> stands for Conditional Compare. Here, <code>W6</code> holds the value at index 0 in the second string (<code>c2 = buf2[0]</code>), while <code>W4</code> holds the value at index 0 in the first string (<code>c1 = buf1[0]</code>). When we reach this state in the code, the Z flag indicates whether the index of the last character is zero (i.e., there is only one character to compare).</p>
+
+<p>If there is only one character to compare, then Z will be 1 at the start of the snippet, and the first comparison will be "short-circuited", so to speak, with <code>4</code> stored in the (nzcv) flags. This means that Z will still be 1, and the next comparison will also be ignored, with <code>0</code> stored in the flags. After the second instruction, the NE condition will be true, and the branch is taken to simply return <code>c1 - c2</code>.</p>
+
+<p>Otherwise, if there is more than one character to compare, then Z will be 0 at the start of the above snippet. The first comparison checks whether <code>c2 == 0</code> (remember that the null character denotes the end of a C string). If <code>c2</code> is zero, then the NE condition on the next compare is false, and like before, <code>0</code> will be automatically stored to flags (Z is 0). The following conditional branch (NE) is again taken to return <code>c1 - c2</code> (which, notice is zero only if <code>c1</code> is also zero). If, on the other hand, <code>c2</code> is nonzero, the the next comparison <code>is</code> executed, explicitly comparing <code>c1</code> against <code>c2</code>. If unequal, the procedure takes the conditional branch (NE) and returns <code>c1 - c2</code> (guaranteed to be nonzero); otherwise, the comparison continues.</p>
+
+<p>Note how just with two conditional comparisons, a rather complex branching pattern can be implemented: continue only if there is more than one character to compare and the first characters are equal; otherwise, return <code>c1 - c2</code>.</p>
+
+<p>Later in the procedure, there is another pair of comparison instructions:</p>
+
+<pre class = "css">
+.text:0000000000405EE0                 CMP             W6, #0
+.text:0000000000405EE4                 CCMP            W4, W6, #0, NE
+.text:0000000000405EE8                 CBZ             W4, loc_405F10 ; W4 is already 0
+.text:0000000000405EEC                 CSET            W5, EQ  ; W5 = (W4 == W6) if W6 else 0
+.text:0000000000405EF0                 CMP             X2, X3
+.text:0000000000405EF4                 CSEL            W5, W5, WZR, NE
+.text:0000000000405EF8                 ADD             X3, X3, #1 ; i++;
+.text:0000000000405EFC                 CBNZ            W5, loc_405ED8 ; W4 = buf1[i]
+</pre>
+
+<p>Here, <code>W6</code> contains the <i>i</i>th index within the second string, and <code>W4</code> contains the <i>i</i>th index within the first string (<code>i &gt; 0</code>). Like before, the first comparison checks to see if the end of the second string has been reached. If so, the next comparison will be skipped, with Z automatically set to 0. Otherwise, Z will be set to the result of the comparison between <code>c1</code> and <code>c2</code>. The next conditional branch is not dependent on the condition flags but rather on the value of <code>c1</code> (whether the end of the first string has been reached). If so, then the procedure automatically returns <code>-c2</code>. Otherwise, the code checks whether another iteration is needed. Only if <code>c1 == c2</code> and <code>i &lt; n - 1</code> does the iteration need to continue. In all other cases, we can simply return <code>c1 - c2</code> as the result of the comparison.</p>
+
+<h5><code>strcmp()</code></h5>
+
+<p>Below is the disassembly for <code>strcmp()</code>. It is very similar in structure to <code>strncmp()</code> discussed above, with the exception that it does not worry about a third length argument. It simply continues comparing characters until a mismatch or the end of a string is encountered.</p>
+
+<img src = "./images/arm_reverse_1.png" class = "small"/>
