@@ -97,6 +97,7 @@ arduino_random.html
 arduino_analog.html
 tios_random.html
 tut_chinese_remainder_thm.html
+stdlib_random.html
 
 
 ;CRYPTOGRAPHY
