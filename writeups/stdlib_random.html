@@ -1,0 +1,79 @@
+<!--Add date: 05/23/2023-->
+
+<h1>Demystifying C Stdlib Random</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Tutorial by YR81</h3>
+
+<h4>Introduction</h4>
+
+<p>In this writeup, we analyze the C Stdlib suite of functions for pseudorandom number generation. Understanding the behavior of these functions allows us to write efficient exploits in any language we wish (rather than relying on clunky communication with C stubs) and discover vulnerabilities in the generator itself.</p>
+
+<h4>State Management</h4>
+
+<p>Our first task will be to locate <code>rand()</code> and understand how it works. In stdlib, we find <code>rand.c</code>, which is a rather disappointing file that defines <code>rand()</code> simply by calling an internal function <code>__random()</code>. Moving on to <code>__random()</code> defined in <code>random.c</code>, we find that it performs a resource lock and calls a re-entrant <code>__random_r()</code> (defined, unsurprisingly, in <code>random_r.c</code>).</p>
+
+<p>The internal function <code>__random_r()</code> expects two arguments. The first, <code>buf</code> is a pointer to a <code>random_data</code> structure (defined in <code>stdlib.h</code> shown below), and the second, <code>result</code> a pointer to an integer, presumably the output of the PRNG.</p>
+
+<pre class = "c">
+struct random_data
+ {
+   int32_t *fptr;              /* Front pointer.  */
+   int32_t *rptr;              /* Rear pointer.  */
+   int32_t *state;             /* Array of state values.  */
+   int rand_type;              /* Type of random number generator.  */
+   int rand_deg;               /* Degree of random number generator.  */
+   int rand_sep;               /* Distance between front and rear.  */
+   int32_t *end_ptr;           /* Pointer behind state table.  */
+ };
+</pre>
+
+<p>The state is set to the <code>int32_t* state</code> field of <code>buf</code>. The type of the random number generator is then checked. If <code>TYPE_0</code> (i.e., linear congruential generator (LCG)) the new state (equal to the returned result) is computed via <code>x_(n + 1) = 1103515245 * x_n + 12345 (mod 2^31)</code>. Otherwise, the next number is computed using the pointers within the <code>buf</code> structure. There are two pointers: a "front" and a "rear". Advancing the PRNG consists of adding the "rear" into the "front" pointer, returning the "front" pointer right-shifted by 1 (to ensure a positive result between 0 and 2^31), and finally incrementing the pointers (cyclically, with period <code>DEG_i</code>) over the state array. The distance between the "front" and "rear" pointers modulo <code>DEG_i</code> remains constant, equal to the parameter <code>SEP_i</code>.</p>
+
+<h4>Initialization</h4>
+
+<p>The only question left to consider is how the state is initialized from a given seed. For <code>TYPE_0</code> (the LCG), this is trivial - the seed <em>is</em> the initial state. Otherwise, the first entry in the state is set equal to the seed, and the rest of the state is computed by the recursion <code>x_n = (16807 * x_(n - 1)) (mod 2^31 - 1)</code>. Following initialization of the state array, the "front" pointer is initialized to the parameter <code>SEP_i</code> and the "rear" pointer is initialized to index 0 (which is currently still the seed). Then, the PRNG is advanced <code>10 * DEG_i</code> times by directly calling <code>__random_r()</code>, discarding all the generated output values. Note that it would be bad to allow <code>0</code> to be the seed, so passing <code>0</code> as a seed argument is interpreted to be the "default" value <code>1</code>.</p>
+
+<h4>Implementation</h4>
+
+<p>The standard version of the PRNG is given by a degree-31 trinomial, <code>x^31 + x^3 + x^0</code>. Thus, following initialization, the update relation <code>x_i = (x_(i - 31) + x_(i - 3)) (mod 2^32)</code> fully defines the behavior of the PRNG. Below is a minimal Python implementation.</p>
+
+<pre class = "python">
+def convS32(i):
+	i %= 1 << 32
+	if i >= 1 << 31:
+		i -= 1 << 32
+		
+	return i
+
+class CStdPRNG(object):
+	def __init__(self, seed, degree = 31):
+		# initialize the state
+		self.degree = degree
+		self.state = [0] * self.degree
+		seed %= 1 << 32
+		if seed == 0:
+			seed = 1
+			
+		self.state[0] = convS32(seed)
+		for i in range(1, degree):
+			self.state[i] = (16807 * self.state[i - 1]) % ((1 << 31) - 1)
+			
+		self.front = 3
+		# step the rng
+		for j in range(10 * degree):
+			self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
+			# advance pointer
+			self.front = (self.front + 1) % self.degree
+			
+		return
+		
+	def rand(self):
+		self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
+		result = self.state[self.front] >> 1
+		# advance pointer
+		self.front = (self.front + 1) % self.degree
+		return result
+		
+</pre>
