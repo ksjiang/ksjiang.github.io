@@ -14,7 +14,7 @@
 
 <p>Our first task will be to locate <code>rand()</code> and understand how it works. In stdlib, we find <code>rand.c</code>, which is a rather disappointing file that defines <code>rand()</code> simply by calling an internal function <code>__random()</code>. Moving on to <code>__random()</code> defined in <code>random.c</code>, we find that it performs a resource lock and calls a re-entrant <code>__random_r()</code> (defined, unsurprisingly, in <code>random_r.c</code>).</p>
 
-<p>The internal function <code>__random_r()</code> expects two arguments. The first, <code>buf</code> is a pointer to a <code>random_data</code> structure (defined in <code>stdlib.h</code> shown below), and the second, <code>result</code> a pointer to an integer, presumably the output of the PRNG.</p>
+<p>The internal function <code>__random_r()</code> expects two arguments. The first, <code>buf</code>, is a pointer to a <code>random_data</code> structure (defined in <code>stdlib.h</code> shown below), and the second, <code>result</code>, is a pointer to an integer, presumably the output of the PRNG.</p>
 
 <pre class = "c">
 struct random_data
@@ -78,7 +78,7 @@ class CStdPRNG(object):
         return result
 </pre>
 
-<p>For example, running with a seed of <code>-1337</code>, the first three numbers generated are:</p>
+<p>For example, running with a seed of <code>-1337</code>, the first four pseudorandom numbers generated are:</p>
 
 <pre class = "python">
 myRNG = CStdPRNG(-1337)
@@ -86,7 +86,7 @@ print(myRNG.rand(), myRNG.rand(), myRNG.rand())
 # 1766598330 413225925 1792113474 2120225281
 </pre>
 
-<p>The equivalent in C would be</p>
+<p>This is exactly what is produced by the equivalent C code:</p>
 
 <pre class = "c">
 
