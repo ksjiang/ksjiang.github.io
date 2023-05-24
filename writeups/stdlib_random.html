@@ -41,39 +41,38 @@ struct random_data
 
 <pre class = "python">
 def convS32(i):
-	i %= 1 << 32
-	if i >= 1 << 31:
-		i -= 1 << 32
-		
-	return i
+    i %= 1 << 32
+    if i >= 1 << 31:
+        i -= 1 << 32
+        
+    return i
 
 class CStdPRNG(object):
-	def __init__(self, seed, degree = 31):
-		# initialize the state
-		self.degree = degree
-		self.state = [0] * self.degree
-		seed %= 1 << 32
-		if seed == 0:
-			seed = 1
-			
-		self.state[0] = convS32(seed)
-		for i in range(1, degree):
-			self.state[i] = (16807 * self.state[i - 1]) % ((1 << 31) - 1)
-			
-		self.front = 3
-		# step the rng
-		for j in range(10 * degree):
-			self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
-			# advance pointer
-			self.front = (self.front + 1) % self.degree
-			
-		return
-		
-	def rand(self):
-		self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
-		result = self.state[self.front] >> 1
-		# advance pointer
-		self.front = (self.front + 1) % self.degree
-		return result
-		
+    def __init__(self, seed, degree = 31):
+        # initialize the state
+        self.degree = degree
+        self.state = [0] * self.degree
+        seed %= 1 << 32
+        if seed == 0:
+            seed = 1
+            
+        self.state[0] = convS32(seed)
+        for i in range(1, degree):
+            self.state[i] = (16807 * self.state[i - 1]) % ((1 << 31) - 1)
+            
+        self.front = 3
+        # step the rng
+        for j in range(10 * degree):
+            self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
+            # advance pointer
+            self.front = (self.front + 1) % self.degree
+            
+        return
+        
+    def rand(self):
+        self.state[self.front] = (self.state[self.front] + self.state[(self.front - 3) % self.degree]) % (1 << 32)
+        result = self.state[self.front] >> 1
+        # advance pointer
+        self.front = (self.front + 1) % self.degree
+        return result
 </pre>
