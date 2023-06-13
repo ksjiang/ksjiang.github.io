@@ -117,6 +117,7 @@ physics.html
 
 ; Unsorted
 dream_speedrun.html
+v8_adaptorframe.html
 
 
 ; HOSTED CHALLENGES

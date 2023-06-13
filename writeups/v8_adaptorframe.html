@@ -1,0 +1,123 @@
+<!--Add date: 06/13/2023-->
+
+<h1>Removing the V8 Adaptor Frame</h1>
+
+<h2>Browser Exploration</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Overview</h4>
+
+<p>Recently, I came across a discussion about removing the <a href = "https://v8.dev/blog/adaptor-frame">adaptor frame</a> from the V8 dev blog [1]. As I was not aware that Javascript was flexible in allowing functions to accept a different number of arguments than their definitions (although this was surely not <i>surprising</i>), I found this discussion quite informative. However, I wanted to make a few observations about some of the comments in that post along with its proposed solution to the problems presented by adaptor frames.</p>
+
+<p>Let's begin by describing why adaptor frames were implemented. The V8 engine performs a check in <code>InvokeFunctionCode()</code>, a builtin called before entry of a function, that compares the number of arguments passed by the caller of a function with the number of arguments that the callee expects. If these counts do not agree, a builtin <code>ArgumentsAdaptorTrampoline()</code> is invoked.</p>
+
+<p>We can imagine that in the execution of a typical program, passing the wrong number of arguments to a function is problematic. If we do not pass enough arguments (termed "under-application"), the callee does not have the information it needs to complete its computation. Perhaps less problematic is if too many arguments are passed ("over-application"), since the additional arguments would be ignored.</p>
+
+<p>V8 allows either case. The <code>ArgumentsAdaptorTrampoline()</code> acts as a "middle-man" in the sense that it ensures the callee's argument expectations are satisfied. It does this by saving the number of arguments passed by the caller, then pushing a new list of arguments in the correct format before passing control to the callee. In the case of under-application, the "missing" arguments are set to <code>undefined</code>. In the case of over-application, the "extra" arguments are simply omitted from the new list. In this way, the callee can run as if the caller had passed the expected number of arguments to begin with. Upon completion, the callee returns to <code>ArgumentsAdaptorTrampoline()</code>, which, having saved the number of arguments passed by the caller, can now pop the caller's original arguments return control to the caller.</p>
+
+<p>However, calling the adaptor trampoline is apparently very expensive. The specific reason was not totally clear from the discussion [1], but it is most likely related to the cost of setting up the additional stack frame and copying arguments to it. In any case, the idea is to eliminate the adaptor frame middle-man by making the caller and callee handle disagreements about argument count themselves. The proposed solution is essentially to (1) pass the arguments in reverse order of how they had originally been passed (making sure the argument count is the maximum of the number expected by the callee and the actual count), and (2) have the callee save the actual argument count. It sounds straightforward, and it really is simple! I hope to show here that this idea has already long been implemented in basically all popular compilers.</p>
+
+<h4>Arguments in the callee frame???</h4>
+
+<p>In <a href = "https://v8.dev/blog/adaptor-frame#arguments-in-the-callee-frame">this</a> part of the blog post, the idea of saving arguments in the callee frame (i.e., in an address smaller than the saved frame pointer) is proposed. This simply does not make any sense, as there is no way for the callee to know what the arguments are upon entry! The only possibility I can think of is for the arguments to be passed via <i>registers</i>, as is already done in the System V AMD64 ABI for example (where arguments are passed in <code>rdi</code>, <code>rsi</code>, <code>rdx</code>, <code>rcx</code>, <code>r8</code>, <code>r9</code> before using the stack), then saved following the callee prologue. However, as there are a limited number of architectural registers, this approach is not generalizable to functions with arbitrary number of arguments.</p>
+
+<h4>"Reverse" is a Relative Term</h4>
+
+<p>Since putting arguments in the callee frame is clearly nonsensical, we are left with keeping arguments in the caller frame. An idea is to perform the call as usual, making sure that the argument list is <i>at least</i> as long as the expected length (padding with <code>undefined</code> if not). The stack would look something like the following.</p>
+
+<img class = "small" src = "./images/v8_adaptorframe_1.png"/>
+
+<p class = "caption">Figure 1. First attempt at removing the adaptor frame. The stack grows towards the top of the page. The frame pointer <code>fp</code> belongs to the callee. Yellow denotes the caller's frame, blue the callee's frame.</p>
+
+<p>This seems pretty good. Local variable <code>i</code> can be easily referenced at frame offset <code>-8 * (5 + i)</code> (assuming a 64-bit machine). The tricky part is accessing arguments [1]. The frame offset of argument <code>j</code> is <code>+8 * (N + 2 - j)</code>, where <code>N</code> is the number of passed arguments. This requires knowledge of the passed argument count, which is undesirable.</p>
+
+<p>The clever idea is to simply reverse the arguments; i.e., have earlier arguments be situated at smaller addresses within the stack. The stack looks like the following:</p>
+
+<img class = "small" src = "./images/v8_adaptorframe_2.png"/>
+
+<p class = "caption">Figure 2. Second attempt at removing the adaptor frame.</p>
+
+<p>Well, this pretty much fixes the problem. Local accesses proceed in the same way as before. Accessing arguments is easy too. The frame offset of argument <code>j</code> here is <code>+8 * (2 + j)</code>, which no longer depends on <code>N</code>.</p>
+
+<p>Clever, yes, but this way of passing arguments has been the standard method for so many compilers and is <i>nothing new</i>! In the System V x86 ABI, for instance, all arguments are passed via stack. Let's see how the following basic program is compiled by GCC.</p>
+
+<pre class = "c">
+
+#include <stdlib.h>
+#include <stdio.h>
+
+int main(unsigned int argc, char** argv) {
+    add(1, 2);
+    return 0;
+}
+</pre>
+
+<pre class = "asm">
+push    ebp
+mov     ebp, esp
+call    __x86_get_pc_thunk_ax
+add     eax, 2E7Bh
+push    2               ;this is the SECOND argument
+push    1               ;this is the FIRST argument
+call    add
+add     esp, 8
+mov     eax, 0
+leave
+retn
+</pre>
+
+<p>The arguments are pushed in the "reverse" order. This makes it so that argument <i>j</i> can be found at base pointer offset <code>+4 * (2 + j)</code>, regardless of the total number of arguments.</p>
+
+<h4>Whose Turn to Clean?</h4>
+
+<p>The last fix we have to make is in the epilogue. In the V8 Javascript implementation, the callee is expected to pop arguments from the stack before returning to the caller. With the above solution, there is still no way for the callee to know how many arguments were passed to it. However, there is no reason why the argument count cannot just be passed as another argument. There are two possibilities worthy of consideration. The first is to pass the count via a register, then saving the count in the callee stack in the prologue. This is the option chosen in [1]. The stack looks like the following:</p>
+
+<img class = "small" src = "./images/v8_adaptorframe_3.png"/>
+
+<p class = "caption">Figure 3. Storing the argument count in the callee frame.</p>
+
+<p>The argument access remains the same as before. However, local variable <code>j</code> is at frame pointer offset <code>-8 * (6 + j)</code> (as opposed to <code>-8 * (5 + j)</code>), and the argument count is located at frame pointer offset <code>-8 * 3 (= -0x18)</code>.</p>
+
+<p>Again, while clever, this solution is not really new. In the System V AMD64 ABI calling convention, functions with variable numbers of arguments, such as <code>printf()</code>, store the number of <i>vector register</i> arguments in <code>al</code> (the lowest byte of <code>eax</code>) [2]. For instance, let's see how the following code is compiled by GCC.</p>
+
+<pre class = "c">
+
+#include <stdlib.h>
+#include <stdio.h>
+
+int main(unsigned int argc, char** argv) {
+    printf("%0.3f", 3.14159);
+    return 0;
+}
+</pre>
+
+<pre class = "asm">
+rep nop edx
+push    rbp
+mov     rbp, rsp
+sub     rsp, 10h
+mov     [rbp-4], edi
+mov     [rbp-10h], rsi
+mov     rax, cs:qword_402010
+movq    xmm0, rax
+lea     rax, a0_3f      ; "%0.3f"
+mov     rdi, rax
+mov     eax, 1          ;ONE argument in vector register (XMM0)
+call    sub_401040
+mov     eax, 0
+leave
+retn
+</pre>
+
+<p>As mentioned earlier, the other option would be to pass the count in the stack as the first argument (before the <code>this</code> "receiver" argument). This would work just as well, but the argument access would be slightly changed.</p>
+
+<h4>Conclusions</h4>
+
+<p>The adaptor frame is a mechanism in V8 to allow functions to pass arbitrary numbers of arguments to a callee. Despite being inefficient, I would not call it "complex" [1] - in fact, its functionality is quite clear, and it is a conceptually straightforward solution to the argument count mismatch problem. But the reason for its existence is arguably the poor calling convention design choices initially made for V8 - in particular, (1) pushing arguments in the same order that they are expected by the callee, and (2) requiring callees clean the stack. These choices <i>created unnecessary problems</i> that others later had to address by reverting to conventions already adopted by many other successful systems.</p>
+
+<h4>References</h4>
+<ol>
+    <li><p>Gomes, V. <a href = "https://v8.dev/blog/adaptor-frame">Faster JavaScript calls</a>, V8 blog.</p></li>
+    <li><p><a href = "https://stackoverflow.com/a/6212835">Why is %eax zeroed before a call to printf?</a>, StackOverflow.</p></li>
+</ol>
