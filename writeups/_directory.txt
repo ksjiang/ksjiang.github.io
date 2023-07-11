@@ -111,6 +111,7 @@ os2021_spn.html
 
 ; Unsorted
 physics.html
+phys_laplacemc.html
 
 
 ; MISCELLANEOUS

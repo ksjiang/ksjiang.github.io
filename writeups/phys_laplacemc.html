@@ -1,0 +1,51 @@
+<h1>Solving 2D Heat Equation with a Variety of Methods</h1>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Problem Statement</h4>
+
+<p>Let's consider a uniform square slab, side length <code>a</code>, of a material. Three of the sides are held fixed at a temperature of <code>T0</code>. The last side has the middle <code>a / 2</code> section held at fixed at temperature <code>T1</code>, and the left and right <code>a / 4</code> sections are at <code>T0</code>. We want to determine the steady-state temperature distribution.</p>
+
+<h4>1. Analytical Approach</h4>
+
+<p>We can easily solve the problem analytically using separation of variables (SOV). The system is</p>
+
+<p><code>t_xx + t_yy = 0</code></p>
+
+<p>subject to the boundary conditions</p>
+
+<p><code>t (x = 0, y) = t (x = 1, y) = t (x, y = 0) = 0</code></p>
+
+<p><code>t (0 &lt; x &lt; a / 4, y = 1) = t (3 a / 4 &lt; x &lt; a, y = 1) = 0</code></p>
+
+<p><code>t (a / 4 &lt; x &lt; 3 a / 4, y = 1) = 1</code></p>
+
+<p>where we have non-dimensionalized positions according to <code>x = X / a</code> and <code>y = Y / a</code> and the temperature as <code>t = (T - T0) / (T1 - T0)</code>.</p>
+
+<p>In familiar SOV fashion, we assume a solution of the form <code>t = f (x) g (y)</code> and divide the governing equation by it</p>
+
+<p><code>f'' / f = -g'' / g</code></p>
+
+<p>which must equal a constant. Since the boundary conditions in <code>x</code> are homogeneous, we take <code>f'' / f = -K</code> so that <code>f = sin (K pi x)</code>. Our solution becomes</p>
+
+<p><code>t = sum_K C_K g (y) sin (K pi x)</code></p>
+
+<p>This means that</p>
+
+<p><code>g'' - K g = 0</code></p>
+
+<p>subject to <code>g (0) = 0</code> and <code>g (1) = C_K</code>, which is obviously solved by <code>g (y) = C_K sinh (K y) / sinh (K)</code>. Here, <code>C_K</code> denotes the projection of the boundary condition at the top edge onto the basis function <code>sin (K pi x)</code>. We can calculate it by simple integration. The final result is</p>
+
+<p><code>t (x, y) = sum_{k odd} S_k ((2 sqrt(2)) / pi) * (sinh (k y) / (k * sinh (k))) * sin (k pi x)</code></p>
+
+<p>where <code>S_k = 1</code> if <code>k = 1 (mod 8)</code> or <code>k = 7 (mod 8)</code>, and <code>S_k = -1</code> if <code>k = 3 (mod 8)</code> or <code>k = 5 (mod 8)</code>.</p>
+
+<p>The result is shown below, retaining 50 terms in the series.</p>
+
+<img src = "./images/phys_laplacemc_1.png"/>
+
+<p>Pretty much what one would expect.</p>
+
+<h4>2. Numerical Solution by Spectral Method</h4>
+
+<p>TODO</p>
