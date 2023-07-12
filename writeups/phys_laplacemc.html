@@ -26,17 +26,17 @@
 
 <p><code>f'' / f = -g'' / g</code></p>
 
-<p>which must equal a constant. Since the boundary conditions in <code>x</code> are homogeneous, we take <code>f'' / f = -K^2</code> so that <code>f = sin (K pi x)</code>. Our solution becomes</p>
+<p>which must equal a constant. Since the boundary conditions in <code>x</code> are homogeneous, we take <code>f'' / f = -K^2</code> so that <code>f = sin (k pi x)</code>, and <code>K = k pi</code>. Our solution becomes</p>
 
-<p><code>t = sum_K C_K g (y) sin (K pi x)</code></p>
+<p><code>t = sum_K C_K g (y) sin (k pi x)</code></p>
 
 <p>This means that</p>
 
 <p><code>g'' - K^2 g = 0</code></p>
 
-<p>subject to <code>g (0) = 0</code> and <code>g (1) = C_K</code>, which is solved by <code>g (y) = C_K sinh (K y) / sinh (K)</code>. Here, <code>C_K</code> denotes the projection of the boundary condition at the top edge onto the basis function <code>sin (K pi x)</code>. We can calculate it by simple integration. The final result is</p>
+<p>subject to <code>g (0) = 0</code> and <code>g (1) = C_K</code>, which is solved by <code>g (y) = C_K sinh (k pi y) / sinh (k pi)</code>. Here, <code>C_K</code> denotes the projection of the boundary condition at the top edge onto the basis function <code>sin (k pi x)</code>. We can calculate it by simple integration. The final result is</p>
 
-<p><code>t (x, y) = sum_{k odd} S_k ((2 sqrt(2)) / pi) * (sinh (k y) / (k * sinh (k))) * sin (k pi x)</code></p>
+<p><code>t (x, y) = sum_{k odd} S_k ((2 sqrt(2)) / pi) * (sinh (k pi y) / (k * sinh (k pi))) * sin (k pi x)</code></p>
 
 <p>where <code>S_k = 1</code> if <code>k = 1 (mod 8)</code> or <code>k = 7 (mod 8)</code>, and <code>S_k = -1</code> if <code>k = 3 (mod 8)</code> or <code>k = 5 (mod 8)</code>.</p>
 
