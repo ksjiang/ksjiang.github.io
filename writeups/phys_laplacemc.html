@@ -36,7 +36,7 @@
 
 <p>subject to <code>g (0) = 0</code> and <code>g (1) = C_K</code>, which is solved by <code>g (y) = C_K sinh (k pi y) / sinh (k pi)</code>. Here, <code>C_K</code> denotes the projection of the boundary condition at the top edge onto the basis function <code>sin (k pi x)</code>. We can calculate it by simple integration. The final result is</p>
 
-<p><code>t (x, y) = sum_{k odd} S_k ((2 sqrt(2)) / pi) * (sinh (k pi y) / (k * sinh (k pi))) * sin (k pi x)</code></p>
+<p><code>t (x, y) = sum_{k odd} 2 S_k sqrt(2) (sinh (k pi y) / (k pi sinh (k pi))) sin (k pi x)</code></p>
 
 <p>where <code>S_k = 1</code> if <code>k = 1 (mod 8)</code> or <code>k = 7 (mod 8)</code>, and <code>S_k = -1</code> if <code>k = 3 (mod 8)</code> or <code>k = 5 (mod 8)</code>.</p>
 
@@ -46,6 +46,40 @@
 
 <p>Pretty much what one would expect.</p>
 
-<h4>2. Numerical Solution by Spectral Method</h4>
+<h4>2. Numerical Approach</h4>
+
+<p>We can also approach the problem numerically using a spectral method. The idea is to find suitable basis functions for the two dimensions such that (1) the boundary conditions are satisfied, (2) the differential operator can be easily inverted, (3) conversions between coefficients and gridpoint values are efficient, and (4) the series representations are spectrally accurate (converge "quickly"). These are rather strict limitations, but it turns out that there are bases that satisfy these properties.</p>
+
+<p>We select a discrete sine basis for the <code>x</code> dimension given the homogeneous boundary conditions. There are several variations, but the Type-I DST is desirable, since the endpoints are guaranteed to be 0. This gives <code>M</code> interior gridpoints at positions <code>x_m = (m + 1) / (M + 1)</code>,where <code>m</code> ranges from <code>0</code> to <code>M - 1</code>. The basis functions are <code>sin ((m + 1) pi x)</code>, and it is easy to see that the second derivative produces <code>-(m + 1)^2 pi^2 sin ((m + 1) pi x)</code>. Note that the differentiation operator is <i>diagonal</i>, which means that each mode in <code>x</code> can be analyzed independently. The inverse transform is efficient (same as the IFFT, <code>O (M N log M)</code>, where <code>M</code> is the number of modes in the <code>x</code> dimension and <code>N</code> is the number of modes in the <code>y</code> dimension).</p>
+
+<p>For the <code>y</code> dimension, we select a modified <i>Chebyshev</i> basis. The Chebyshev basis consists of polynomials that are orthogonal under the weight function <code>1 / (1 - x^2)^(1 / 2)</code> on the interval <code>s in [-1, 1]</code>. Since the domain in this problem is <code>y in [0, 1]</code>, we have the coordinate transformation <code>s = 2 y - 1</code>. The differentiation operator is dense if using Chebyshev as the test basis; however, if we instead use an <code>ultraspherical</code> test basis, the differentiation operator consists of a single superdiagonal. This problem features a second derivative, so we will use the ultraspherical-2 polynomials as the test basis. First, we note that the differentiation operator with respect to <code>y</code> must be related to that with respect to <code>s</code>, the standard Chebyshev variable. We see that <code>d_xx = 4 d_ss</code> by the linear coordinate transform. Double differentiation with respect to <code>x</code> appears not as a simple scaling, but rather as a banded matrix, since we must also convert from the Chebyshev basis to the ultraspherical-2 basis. The inverse transform is efficient, since it is basically just an IDCT, with complexity <code>O(M N log N)</code>. The total complexity for going from coefficients to gridpoint values is thus <code>O (M N log M) + O (M N log N) = O (M N log (M N))</code>, which is efficient.</p>
+
+<p>The system that must be solved for each mode <code>m</code> between <code>m = 0</code> and <code>m = M - 1</code> is therefore</p>
+
+<img class = "small" src = "./images/phys_laplacemc_2.png"/>
+
+<p>subject to boundary conditions, which can just replace the final two rows. Here, we have</p>
+
+<img class = "small" src = "./images/phys_laplacemc_3.png"/>
+
+<p>as the double differentiation operator,</p>
+
+<img class = "small" src = "./images/phys_laplacemc_4.png"/>
+
+<p>as the conversion operator from Chebyshev to the ultraspherical-1 basis, and</p>
+
+<img class = "small" src = "./images/phys_laplacemc_5.png"/>
+
+<p>as the conversion operator from the ultraspherical-1 to the ultraspherical-2 basis.</p>
+
+<p>Solving the system, using <code>M = 98</code> modes in <code>x</code> and <code>N = 100</code> modes in <code>y</code> (to match the <code>100 x 100</code> discretization used in the analytical method), we obtain a result identical to the analytical solution.</p>
+
+<img src = "./images/phys_laplacemc_6.png"/>
+
+<p>The advantage of the numerical method is that it scales well with the problem size. Shown below are the runtimes for various parts of the numerical solution. Building and factoring the operator matrix are understandably the most expensive operations, followed by the inverse transform, and applying the matrix factorization is the cheapest. The dotted line denotes linear scaling. It is evident that all operations scale nearly linearly with the problem size.</p>
+
+<img src = "./images/phys_laplacemc_7.png"/>
+
+<h4>3. Monte Carlo</h4>
 
 <p>TODO</p>
