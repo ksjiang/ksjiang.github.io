@@ -1,0 +1,47 @@
+<!--Add date: 08/31/2023-->
+
+<h1>Zenbleed Unpacked</h1>
+
+<h3>Writeup by Kyle Jiang</h3>
+
+<h4>Introduction</h4>
+
+<p>In July 2023, Travis Ormandy and coworkers discovered Zenbleed, a critical hardware vulnerability affecting AMD's Zen2 line of CPUs [1]. This vulnerability allows an attacker to leak data loaded to vector registers by other processes, which can be detrimental considering that many standard library string operations are performed using these registers. Unlike other recent hardware vulnerabilities [2, 3], however, Zenbleed does not rely a side-channel such as cache access timing. Rather, it exploits a <i>mistake</i> in a particular <i>mis-speculation recovery</i> strategy on Zen2 processors. In this discussion, we will take a closer look at the proof of concept code that triggers the vulnerability.</p>
+
+<h4>Proof of Concept Code</h4>
+
+<p>The example code given in Ormandy's report is the following (modified slightly to use concrete register names and instructions) [1]:</p>
+
+<pre class = "asm">
+    vcvtsi2ss       xmm0, xmm0, rax
+    vmovupd         ymm0, ymm0
+    jpe             overzero
+    jpo             overzero
+    vzeroupper
+overzero:
+    nop
+</pre>
+
+<h4>Semantic Analysis</h4>
+
+<p>Let's begin by understanding what this snippet is supposed to do. Let's suppose <code>rax</code> is initialized with some value, <code>0xdeadbeef</code>, while <code>ymm0</code> initially contains some data <code>0x201f1e..030201</code>. Since <code>xmm0</code> comprises the lower half of <code>ymm0</code>, we have that it holds <code>0x100f0e...030201</code>.</p>
+
+<p>The first instruction, <code>vcvtsi2ss</code>, is a <b>V</b>EX-prefixed (128-bit) <b>c</b>on<b>v</b>er<b>t</b> <b>s</b>igned <b>i</b>nteger to <b>s</b>calar <b>s</b>ingle-precision floating-point number. Note that it has one destination operand (<code>xmm0</code>) and <i>two</i> source operands (<code>xmm0</code> and <code>rax</code>). The second source operand (<code>rax</code>) holds the signed integer that is to be converted into floating-point. Since single-precision floating-points are <code>32</code> bits in length, the remaining <code>128 - 32 = 96</code> bits are taken from the same bit positions of the first source operand (here, <code>xmm0</code> itself). This instruction also has the side-effect of zeroing the upper half (<code>128</code> bits) of <code>ymm0</code>. The floating-point representation of <code>0xdeadbeef</code> is <code>0x4f5eadbf</code> (note that there is some rounding error) will be stored in the lowest <code>32</code> bits of <code>xmm0</code>, while bits <code>32-127</code> will remain unchanged. Therefore, <code>xmm0</code> will have the value <code>0x100f0e...054f5eadbf</code>. Bits <code>128-255</code> of <code>ymm0</code> will be zeroed out.</p>
+
+<p>The second instruction, <code>vmovupd</code>, is again <b>V</b>EX-prefixed (256-bit); it performs a <b>mov</b>e of <b>u</b>naligned <b>p</b>acked <b>d</b>ouble-precision floating-point numbers. This instruction does not have any architectural effect since the source and destination are identical (<code>ymm0</code>).</p>
+
+<p>The next two instructions are conditional branches with complementary conditions but the same target (<code>overzero</code>). Obviously, no matter what state the flags are in at this point, we should jump over the following <code>vzeroupper</code> instruction to the final <code>nop</code>. Note that it should not matter what <code>vzeroupper</code> does, since it should not be executed.</p>
+
+<p>The result is that we should have in <code>ymm0</code> the final value <code>0x00...00100f0e...054f5eadbf</code>. The upper half is zeroed out, bits <code>0-31</code> contain the single-precision representation of the number <code>0xdeadbeef</code>, and bits <code>32-127</code> contain the original <code>xmm0</code> contents at those bit positions.</p>
+
+<h4>Microarchitecture</h4>
+
+<p>If the above code snippet is actually executed on an AMD Zen2 processor, the result will sometimes not be as expected. Let's understand why.</p>
+
+<p></p>
+
+<h4>References</h4>
+
+<ol>
+    <li><p>Ormandy, T. <a href = "https://lock.cmpxchg8b.com/zenbleed.html">"Zenbleed"</a>, self publication.</p></li>
+</ol>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <title>Coin Cell Channel Scheduler</title>
+        <meta charset = "utf-8"/>
+    </head>
+    <body>
+        <pre id = "panel">
+            <p>Coin Cell Channel Scheduler</p>
+            <p>If you are asked to sign in, refresh the page to try accessing the database again.</p>
+                <pre id = "control">
+                    <label for = "channel">Channel ID:</label><select name = "channel" id = "channel"></select>
+                    <button id = "select_channel" onclick = "selectChannel()">Select Channel</button>
+                    <pre id = "control_info">
+                        <p>Channel Info</p>
+                        <p id = "lbl_owner">Owner</p><p id = "owner"></p>
+                        <p id = "lbl_current">Current user</p><p id = "current"></p>
+                        <p id = "lbl_start_time">Start time</p><p id = "start_time"></p>
+                        <p id = "lbl_end_time">Estimated end time</p><p id = "end_time"></p>
+                        <p id = "lbl_save_cell">Save this cell?</p><p id = "save_cell"></p>
+                        <p id = "lbl_queued">Queued</p><p id = "queued"></p>
+                    </pre>
+                    <pre id = "control_modify">
+                        <p>Modify Channel</p>
+                        <label for = "req_user">Initials:</label>
+                        <input type = "text" id = "req_user"/>
+                        <label for = "req_time">Estimated time (hours):</label>
+                        <input type = "text" id = "req_time"/>
+                        <button id = "start_cell" onclick = "startCell()">Start Cell</button>
+                        <button id = "stop_cell" onclick = "stopCell()">Stop Cell</button>
+                        <button id = "queue" onclick = "queue()">Enter Queue</button>
+                        <button id = "toggle_save" onclick = "toggleSave()"></button>
+                    </pre>
+                </pre>
+                <pre id = "content" style = "white-space: pre-wrap;"></pre>
+                <pre id = "error" style = "color: red;"></pre>
+        </pre>
+
+        <script type = "text/javascript">
+            /*
+            username: gallant.lab.mit@gmail.com
+            password: \34mF7qv4Rje
+            */
+            const CLIENT_ID = "990695329274-67jo3o2el2lag8vvgr3h9p90hcp9vrnv.apps.googleusercontent.com";
+            const SCOPES = "https://www.googleapis.com/auth/spreadsheets";
+            const SPREADSHEET_ID = "1FbZRZVyVPgeP-mI8l1fhOzz_9vEEJe5SleOqx7ZZPdE";
+            const DISCOVERY_DOC = "https://sheets.googleapis.com/$discovery/rest?version=v4";
+            const DATETIME_STYLE = {
+                weekday: "short", 
+                year: "numeric", 
+                month: "short", 
+                day: "numeric", 
+                hour: "2-digit", 
+                minute: "2-digit", 
+            };
+            const DATABASE_WRITE_WAIT_MS = 250;
+            
+            let gapiInitted = false;
+            let gsiInitted = false;
+            let tokenClient;
+            let access_token;
+
+            document.getElementById("content").innerText = "Loading database...";
+            document.getElementById("control").style.visibility = "hidden";
+            document.getElementById("control_info").style.visibility = "hidden";
+            document.getElementById("control_modify").style.visibility = "hidden";
+
+            async function sleep(ms) {
+                return new Promise((resolve) => setTimeout(resolve, ms));
+            }
+
+            async function gapiLoaded() {
+                gapi.load("client", gapiStart);
+                return;
+            }
+
+            async function gapiStart() {
+                await gapi.client.init(
+                    {
+                        "discoveryDocs": [DISCOVERY_DOC]
+                    }
+                );
+                gapiInitted = true;
+                enableControl();
+                return;
+            }
+
+            async function gsiLoaded() {
+                tokenClient = google.accounts.oauth2.initTokenClient(
+                    {
+                        client_id: CLIENT_ID, 
+                        scope: SCOPES, 
+                        callback: (tokenResponse) => {
+                            access_token = tokenResponse.access_token;
+                            window.localStorage.setItem("gtoken", access_token);
+                        }, 
+                    }
+                );
+                gsiInitted = true;
+                enableControl();
+                return;
+            }
+
+            async function enableControl() {
+                if (gapiInitted && gsiInitted) {
+                    if (window.localStorage.getItem("gtoken")) {
+                        try {
+                            // try reading to see if the token is still valid
+                            access_token = window.localStorage.getItem("gtoken");
+                            gapi.auth.setToken({access_token: access_token});
+                            await getValues("A1");
+                        } catch (err) {
+                            // if not, request token again
+                            await tokenClient.requestAccessToken();
+                        }
+                    } else {
+                        await tokenClient.requestAccessToken();
+                    }
+
+                    document.getElementById("content").innerText = "";
+                    document.getElementById("control").style.visibility = "visible";
+                    getValues("Main!A:A", (range) => populateOptions(document.getElementById("channel"), range));
+                }
+
+                return;
+            }
+
+            async function getValues(range, callback) {
+                try {
+                    await gapi.client.sheets.spreadsheets.values.get(
+                        {
+                            spreadsheetId: SPREADSHEET_ID,
+                            range: range, 
+                        }
+                    ).then((response) => {
+                        if (callback) callback(response.result.values);
+                    });
+                } catch (err) {
+                    document.getElementById("error").innerText = "Error in getValues()";
+                    throw new Error("noValue");
+                }
+
+                return;
+            }
+
+            async function populateOptions(selectTag, options) {
+                if (typeof options !== "undefined" && options.length > 1) {
+                    options.slice(1).map((elt) => {
+                        let opt = document.createElement("option");
+                        opt.value = elt;
+                        opt.innerText = elt;
+                        selectTag.append(opt);
+                    });
+                }
+                return;
+            }
+
+            async function setField(elt, range, def) {
+                if (typeof range !== "undefined") {
+                    elt.innerText = range[0];
+                } else {
+                    elt.innerText = def;
+                }
+
+                return;
+            }
+
+            async function setFieldOtherwise(elt, range, callback) {
+                if (typeof range !== "undefined") {
+                    elt.innerText = range[0];
+                } else {
+                    callback();
+                }
+
+                return;
+            }
+
+            async function setFieldConditionalYN(elt, range, opt1, opt2) {
+                if (typeof range !== "undefined" && range == 'Y') {
+                    elt.innerText = opt1;
+                } else {
+                    elt.innerText = opt2;
+                }
+
+                return;
+            }
+
+            async function callbackConditionalYN(range, ifyes, ifno) {
+                if (typeof range !== "undefined" && range == 'Y') {
+                    if (ifyes) ifyes();
+                } else {
+                    if (ifno) ifno();
+                }
+
+                return;
+            }
+
+            async function callbackConditional(range, ifdef, ifndef) {
+                if (typeof range !== "undefined") {
+                    if (ifdef) ifdef();
+                } else {
+                    if (ifndef) ifndef();
+                }
+
+                return;
+            }
+            
+            async function resetForm() {
+                document.getElementById("channel").disabled = false;
+                document.getElementById("select_channel").innerText = "Select Channel";
+                document.getElementById("select_channel").onclick = selectChannel;
+                document.getElementById("control_info").style.visibility = "hidden";
+                document.getElementById("control_modify").style.visibility = "hidden";
+                return;
+            }
+
+            async function selectChannel() {
+                document.getElementById("content").innerText = "";
+                document.getElementById("channel").disabled = true;
+                document.getElementById("select_channel").innerText = "Reselect Channel";
+                document.getElementById("select_channel").onclick = resetForm;
+                document.getElementById("control_info").style.visibility = "visible";
+                document.getElementById("control_modify").style.visibility = "visible";
+                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                // populate the channel information
+                getValues("Main!B" + (selIdx).toString(), (range) => setField(document.getElementById("owner"), range, "no owner"));
+                getValues("Main!C" + (selIdx).toString(), (range) => setField(document.getElementById("current"), range, "no current user"))
+                getValues("Main!D" + (selIdx).toString(), (range) => setField(document.getElementById("start_time"), range, "-"))
+                getValues("Main!E" + (selIdx).toString(), (range) => setField(document.getElementById("end_time"), range, "-"))
+                getValues("Main!F" + (selIdx).toString(), (range) => setFieldConditionalYN(document.getElementById("save_cell"), range, "Yes", "No"))
+                getValues("Main!G" + (selIdx).toString(), (range) => setFieldOtherwise(document.getElementById("queued"), range, () => getValues("Main!B" + (selIdx).toString(), (range) => setField(document.getElementById("queued"), range, "no queued"))));
+                // set the correct modifications
+                getValues("Main!F" + (selIdx).toString(), (range) => setFieldConditionalYN(document.getElementById("toggle_save"), range, "Don't Save Cell", "Save Cell"))
+                return;
+            }
+
+            async function updateValues(range, values, callback) {
+                values = values;
+                const body = {
+                    values: values,
+                };
+                try {
+                    await gapi.client.sheets.spreadsheets.values.update(
+                        {
+                            spreadsheetId: SPREADSHEET_ID, 
+                            range: range, 
+                            valueInputOption: "RAW", 
+                            resource: body, 
+                        }
+                    ).then((response) => {
+                        if (callback) callback(response.result.values);
+                    });
+                } catch (err) {
+                    document.getElementById("error").innerText = "Error in updateValues()";
+                    throw new Error("noUpdate");
+                }
+
+                return;
+            }
+
+            async function toggleSave() {
+                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                getValues("Main!F" + (selIdx).toString(), (range) => callbackConditionalYN(range, () => {
+                    updateValues("Main!F" + (selIdx).toString(), [['N']]);
+                }, () => {
+                    updateValues("Main!F" + (selIdx).toString(), [['Y']]);
+                }));
+                document.getElementById("content").innerText = "Writing to database...";
+                await sleep(DATABASE_WRITE_WAIT_MS);
+                selectChannel();
+                return;
+            }
+
+            async function startCell() {
+                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                getValues("Main!C" + (selIdx).toString(), (range) => callbackConditional(range, () => {
+                    alert("The cell is running. Please stop it first.");
+                }, async () => {
+                    // grab initials
+                    let ini = document.getElementById("req_user").value;
+                    let delta = parseFloat(document.getElementById("req_time").value);
+                    if (!ini) {
+                        alert("Please enter valid initials.");
+                        return;
+                    }
+
+                    if (!delta || (delta < 0.)) {
+                        alert("Please enter a valid time estimate.");
+                        return;
+                    }
+
+                    // get current time
+                    const start = new Date(Date.now());
+                    // calculate estimated end time
+                    const end = new Date(start.getTime() + delta * (60 * 60 * 1E3));
+
+                    updateValues("Main!C" + (selIdx).toString(), [[ini]]);
+                    updateValues("Main!D" + (selIdx).toString(), [[start.toLocaleString("en-US", DATETIME_STYLE)]]);
+                    updateValues("Main!E" + (selIdx).toString(), [[end.toLocaleString("en-US", DATETIME_STYLE)]]);
+                    document.getElementById("content").innerText = "Writing to database...";
+                    await sleep(DATABASE_WRITE_WAIT_MS);
+                    selectChannel();
+                    return;
+                }));
+                return;
+            }
+
+            async function stopCell() {
+                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                getValues("Main!C" + (selIdx).toString(), (range) => callbackConditional(range, async () => {
+                    updateValues("Main!C" + (selIdx).toString(), [[""]]);
+                    updateValues("Main!D" + (selIdx).toString(), [[""]]);
+                    updateValues("Main!E" + (selIdx).toString(), [[""]]);
+                    getValues("Main!F" + (selIdx).toString(), (range) => callbackConditionalYN(range, () => alert("Make sure to save this cell!!!"), undefined));
+                    document.getElementById("content").innerText = "Writing to database...";
+                    await sleep(DATABASE_WRITE_WAIT_MS);
+                    selectChannel();
+                    return;
+                }, async () => {
+                    alert("The cell is not running.");
+                }));
+                return;
+            }
+
+            async function queue() {
+                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                updateValues("Main!G" + (selIdx).toString(), [[document.getElementById("req_user").value]]);
+                document.getElementById("content").innerText = "Writing to database...";
+                await sleep(DATABASE_WRITE_WAIT_MS);
+                selectChannel();
+                return;
+            }
+        </script>
+        <script async defer src = "https://apis.google.com/js/api.js" onload = "gapiLoaded()"></script>
+        <script async defer src = "https://accounts.google.com/gsi/client" onload = "gsiLoaded()"></script>
+    </body>
+</html>
