@@ -115,6 +115,7 @@
                     }
 
                     document.getElementById("content").innerText = "";
+                    document.getElementById("error").innerText = "";
                     document.getElementById("control").style.visibility = "visible";
                     getValues("Main!A:A", (range) => populateOptions(document.getElementById("channel"), range));
                 }
@@ -213,6 +214,7 @@
 
             async function selectChannel() {
                 document.getElementById("content").innerText = "";
+                document.getElementById("error").innerText = "";
                 document.getElementById("channel").disabled = true;
                 document.getElementById("select_channel").innerText = "Reselect Channel";
                 document.getElementById("select_channel").onclick = resetForm;
