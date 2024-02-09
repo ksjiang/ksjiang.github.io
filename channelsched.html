@@ -8,7 +8,6 @@
     <body>
         <pre id = "panel">
             <p>Coin Cell Channel Scheduler</p>
-            <p>If you are asked to sign in, refresh the page to try accessing the database again.</p>
                 <pre id = "control">
                     <label for = "channel">Channel ID:</label><select name = "channel" id = "channel"></select>
                     <button id = "select_channel" onclick = "selectChannel()">Select Channel</button>
@@ -56,17 +55,16 @@
             let gsiInitted = false;
             let tokenClient;
             let access_token;
+            let selected_chan = 0;
+            let save_cell;
 
+            // initialize the user interface
             document.getElementById("content").innerText = "Loading database...";
             document.getElementById("control").style.visibility = "hidden";
             document.getElementById("control_info").style.visibility = "hidden";
             document.getElementById("control_modify").style.visibility = "hidden";
 
-            async function sleep(ms) {
-                return new Promise((resolve) => setTimeout(resolve, ms));
-            }
-
-            async function gapiLoaded() {
+            function gapiLoaded() {
                 gapi.load("client", gapiStart);
                 return;
             }
@@ -82,7 +80,7 @@
                 return;
             }
 
-            async function gsiLoaded() {
+            function gsiLoaded() {
                 tokenClient = google.accounts.oauth2.initTokenClient(
                     {
                         client_id: CLIENT_ID, 
@@ -90,6 +88,8 @@
                         callback: (tokenResponse) => {
                             access_token = tokenResponse.access_token;
                             window.localStorage.setItem("gtoken", access_token);
+                            // reload the page
+                            location.reload();
                         }, 
                     }
                 );
@@ -98,50 +98,54 @@
                 return;
             }
 
-            async function enableControl() {
+            function enableControl() {
                 if (gapiInitted && gsiInitted) {
                     if (window.localStorage.getItem("gtoken")) {
-                        try {
-                            // try reading to see if the token is still valid
-                            access_token = window.localStorage.getItem("gtoken");
-                            gapi.auth.setToken({access_token: access_token});
-                            await getValues("A1");
-                        } catch (err) {
-                            // if not, request token again
-                            await tokenClient.requestAccessToken();
-                        }
+                        // try reading to see if the token is still valid
+                        access_token = window.localStorage.getItem("gtoken");
+                        gapi.auth.setToken({access_token: access_token});
+                        getValues("A1")
+                            .catch(() => {
+                                tokenClient.requestAccessToken();
+                            });
                     } else {
-                        await tokenClient.requestAccessToken();
+                        tokenClient.requestAccessToken();
                     }
 
                     document.getElementById("content").innerText = "";
                     document.getElementById("error").innerText = "";
                     document.getElementById("control").style.visibility = "visible";
-                    getValues("Main!A:A", (range) => populateOptions(document.getElementById("channel"), range));
+                    getValues("Main!A:A")
+                        .then((range) => populateOptions(document.getElementById("channel"), range))
+                        .catch((err) => updateErrorBar("Get channels failed: " + err.message));
                 }
 
                 return;
             }
 
-            async function getValues(range, callback) {
+            // returns a promise for a range of values read from the spreadsheet
+            async function getValues(range) {
+                let response;
                 try {
-                    await gapi.client.sheets.spreadsheets.values.get(
+                    response = await gapi.client.sheets.spreadsheets.values.get(
                         {
-                            spreadsheetId: SPREADSHEET_ID,
+                            spreadsheetId: SPREADSHEET_ID, 
                             range: range, 
                         }
-                    ).then((response) => {
-                        if (callback) callback(response.result.values);
-                    });
+                    );
+                    return response.result.values;
                 } catch (err) {
-                    document.getElementById("error").innerText = "Error in getValues()";
-                    throw new Error("noValue");
+                    throw new Error ("getValues() failed: " + err.message);
                 }
+            }
 
+            // updates the message in the error bar
+            function updateErrorBar(message) {
+                document.getElementById("error").innerText = message;
                 return;
             }
 
-            async function populateOptions(selectTag, options) {
+            function populateOptions(selectTag, options) {
                 if (typeof options !== "undefined" && options.length > 1) {
                     options.slice(1).map((elt) => {
                         let opt = document.createElement("option");
@@ -150,10 +154,11 @@
                         selectTag.append(opt);
                     });
                 }
+
                 return;
             }
 
-            async function setField(elt, range, def) {
+            function setField(elt, range, def) {
                 if (typeof range !== "undefined") {
                     elt.innerText = range[0];
                 } else {
@@ -163,17 +168,17 @@
                 return;
             }
 
-            async function setFieldOtherwise(elt, range, callback) {
+            function setFieldOtherwise(elt, range, callback) {
                 if (typeof range !== "undefined") {
                     elt.innerText = range[0];
                 } else {
-                    callback();
+                    if (callback) callback();
                 }
 
                 return;
             }
 
-            async function setFieldConditionalYN(elt, range, opt1, opt2) {
+            function setFieldConditionalYN(elt, range, opt1, opt2) {
                 if (typeof range !== "undefined" && range == 'Y') {
                     elt.innerText = opt1;
                 } else {
@@ -183,7 +188,17 @@
                 return;
             }
 
-            async function callbackConditionalYN(range, ifyes, ifno) {
+            function setSaveCellConditionalYN(range) {
+                if (typeof range !== "undefined" && range == 'Y') {
+                    save_cell = true;
+                } else {
+                    save_cell = false;
+                }
+
+                return;
+            }
+
+            function callbackConditionalYN(range, ifyes, ifno) {
                 if (typeof range !== "undefined" && range == 'Y') {
                     if (ifyes) ifyes();
                 } else {
@@ -193,7 +208,7 @@
                 return;
             }
 
-            async function callbackConditional(range, ifdef, ifndef) {
+            function callbackConditional(range, ifdef, ifndef) {
                 if (typeof range !== "undefined") {
                     if (ifdef) ifdef();
                 } else {
@@ -203,16 +218,18 @@
                 return;
             }
             
-            async function resetForm() {
+            // clears the form to allow for a new channel to be selected
+            function resetForm() {
                 document.getElementById("channel").disabled = false;
                 document.getElementById("select_channel").innerText = "Select Channel";
                 document.getElementById("select_channel").onclick = selectChannel;
                 document.getElementById("control_info").style.visibility = "hidden";
                 document.getElementById("control_modify").style.visibility = "hidden";
+                selected_chan = 0;
                 return;
             }
 
-            async function selectChannel() {
+            function selectChannel() {
                 document.getElementById("content").innerText = "";
                 document.getElementById("error").innerText = "";
                 document.getElementById("channel").disabled = true;
@@ -220,21 +237,42 @@
                 document.getElementById("select_channel").onclick = resetForm;
                 document.getElementById("control_info").style.visibility = "visible";
                 document.getElementById("control_modify").style.visibility = "visible";
-                let selIdx = document.getElementById("channel").selectedIndex + 2;
+                // set the selected channel
+                selected_chan = document.getElementById("channel").selectedIndex + 2;
+                if (selected_chan < 2) {
+                    resetForm();
+                    return;
+                }
                 // populate the channel information
-                getValues("Main!B" + (selIdx).toString(), (range) => setField(document.getElementById("owner"), range, "no owner"));
-                getValues("Main!C" + (selIdx).toString(), (range) => setField(document.getElementById("current"), range, "no current user"))
-                getValues("Main!D" + (selIdx).toString(), (range) => setField(document.getElementById("start_time"), range, "-"))
-                getValues("Main!E" + (selIdx).toString(), (range) => setField(document.getElementById("end_time"), range, "-"))
-                getValues("Main!F" + (selIdx).toString(), (range) => setFieldConditionalYN(document.getElementById("save_cell"), range, "Yes", "No"))
-                getValues("Main!G" + (selIdx).toString(), (range) => setFieldOtherwise(document.getElementById("queued"), range, () => getValues("Main!B" + (selIdx).toString(), (range) => setField(document.getElementById("queued"), range, "no queued"))));
-                // set the correct modifications
-                getValues("Main!F" + (selIdx).toString(), (range) => setFieldConditionalYN(document.getElementById("toggle_save"), range, "Don't Save Cell", "Save Cell"))
+                getValues("Main!B" + (selected_chan).toString())
+                    .then((range) => setField(document.getElementById("owner"), range, "no owner"))
+                    .catch((err) => updateErrorBar("Get owner failed: " + err.message));
+                getValues("Main!C" + (selected_chan).toString())
+                    .then((range) => setField(document.getElementById("current"), range, "no current user"))
+                    .catch((err) => updateErrorBar("Get user failed: " + err.message));
+                getValues("Main!D" + (selected_chan).toString())
+                    .then((range) => setField(document.getElementById("start_time"), range, "-"))
+                    .catch((err) => updateErrorBar("Get start time failed: " + err.message));
+                getValues("Main!E" + (selected_chan).toString())
+                    .then((range) => setField(document.getElementById("end_time"), range, "-"))
+                    .catch((err) => updateErrorBar("Get end time failed: " + err.message));
+                getValues("Main!F" + (selected_chan).toString())
+                    .then((range) => {
+                        setSaveCellConditionalYN(range);
+                        setFieldConditionalYN(document.getElementById("save_cell"), range, "Yes", "No");
+                        setFieldConditionalYN(document.getElementById("toggle_save"), range, "Don't Save Cell", "Save Cell");
+                    })
+                    .catch((err) => updateErrorBar("Get save cell failed: " + err.message));
+                getValues("Main!G" + (selected_chan).toString())
+                    .then((range) => setFieldOtherwise(document.getElementById("queued"), range, () => {
+                        getValues("Main!B" + (selected_chan).toString())
+                            .then((range) => setField(document.getElementById("queued"), range, "no queued"))
+                    }))
+                    .catch((err) => updateErrorBar("Get queued failed: " + err.message));
                 return;
             }
 
-            async function updateValues(range, values, callback) {
-                values = values;
+            async function updateValues(range, values) {
                 const body = {
                     values: values,
                 };
@@ -246,86 +284,97 @@
                             valueInputOption: "RAW", 
                             resource: body, 
                         }
-                    ).then((response) => {
-                        if (callback) callback(response.result.values);
-                    });
+                    );
                 } catch (err) {
-                    document.getElementById("error").innerText = "Error in updateValues()";
-                    throw new Error("noUpdate");
+                    throw new Error("updateValues() failed: " + err.message);
                 }
 
                 return;
             }
 
             async function toggleSave() {
-                let selIdx = document.getElementById("channel").selectedIndex + 2;
-                getValues("Main!F" + (selIdx).toString(), (range) => callbackConditionalYN(range, () => {
-                    updateValues("Main!F" + (selIdx).toString(), [['N']]);
-                }, () => {
-                    updateValues("Main!F" + (selIdx).toString(), [['Y']]);
-                }));
+                if (selected_chan < 2) {
+                    resetForm();
+                    return;
+                }
+
+                if (save_cell) {
+                    await updateValues("Main!F" + (selected_chan).toString(), [['N']]);
+                } else {
+                    await updateValues("Main!F" + (selected_chan).toString(), [['Y']]);
+                }
+
                 document.getElementById("content").innerText = "Writing to database...";
-                await sleep(DATABASE_WRITE_WAIT_MS);
                 selectChannel();
                 return;
             }
 
-            async function startCell() {
-                let selIdx = document.getElementById("channel").selectedIndex + 2;
-                getValues("Main!C" + (selIdx).toString(), (range) => callbackConditional(range, () => {
-                    alert("The cell is running. Please stop it first.");
-                }, async () => {
-                    // grab initials
-                    let ini = document.getElementById("req_user").value;
-                    let delta = parseFloat(document.getElementById("req_time").value);
-                    if (!ini) {
-                        alert("Please enter valid initials.");
-                        return;
-                    }
-
-                    if (!delta || (delta < 0.)) {
-                        alert("Please enter a valid time estimate.");
-                        return;
-                    }
-
-                    // get current time
-                    const start = new Date(Date.now());
-                    // calculate estimated end time
-                    const end = new Date(start.getTime() + delta * (60 * 60 * 1E3));
-
-                    updateValues("Main!C" + (selIdx).toString(), [[ini]]);
-                    updateValues("Main!D" + (selIdx).toString(), [[start.toLocaleString("en-US", DATETIME_STYLE)]]);
-                    updateValues("Main!E" + (selIdx).toString(), [[end.toLocaleString("en-US", DATETIME_STYLE)]]);
-                    document.getElementById("content").innerText = "Writing to database...";
-                    await sleep(DATABASE_WRITE_WAIT_MS);
-                    selectChannel();
+            function startCell() {
+                if (selected_chan < 2) {
+                    resetForm();
                     return;
-                }));
+                }
+
+                getValues("Main!C" + (selected_chan).toString())
+                    .then((range) => callbackConditional(range, () => {
+                        alert("The cell is running. Please stop it first.");
+                    }, async () => {
+                        // grab initials
+                        let ini = document.getElementById("req_user").value;
+                        let delta = parseFloat(document.getElementById("req_time").value);
+                        if (!ini) {
+                            alert("Please enter valid initials.");
+                            return;
+                        }
+
+                        if (!delta || (delta < 0.)) {
+                            alert("Please enter a valid time estimate.");
+                            return;
+                        }
+
+                        // get current time
+                        const start = new Date(Date.now());
+                        // calculate estimated end time
+                        const end = new Date(start.getTime() + delta * (60 * 60 * 1E3));
+
+                        await updateValues("Main!C" + (selected_chan).toString(), [[ini]]);
+                        await updateValues("Main!D" + (selected_chan).toString(), [[start.toLocaleString("en-US", DATETIME_STYLE)]]);
+                        await updateValues("Main!E" + (selected_chan).toString(), [[end.toLocaleString("en-US", DATETIME_STYLE)]]);
+                        document.getElementById("content").innerText = "Writing to database...";
+                        selectChannel();
+                        return;
+                    }));
                 return;
             }
 
-            async function stopCell() {
-                let selIdx = document.getElementById("channel").selectedIndex + 2;
-                getValues("Main!C" + (selIdx).toString(), (range) => callbackConditional(range, async () => {
-                    updateValues("Main!C" + (selIdx).toString(), [[""]]);
-                    updateValues("Main!D" + (selIdx).toString(), [[""]]);
-                    updateValues("Main!E" + (selIdx).toString(), [[""]]);
-                    getValues("Main!F" + (selIdx).toString(), (range) => callbackConditionalYN(range, () => alert("Make sure to save this cell!!!"), undefined));
-                    document.getElementById("content").innerText = "Writing to database...";
-                    await sleep(DATABASE_WRITE_WAIT_MS);
-                    selectChannel();
+            function stopCell() {
+                if (selected_chan < 2) {
+                    resetForm();
                     return;
-                }, async () => {
-                    alert("The cell is not running.");
-                }));
+                }
+
+                getValues("Main!C" + (selected_chan).toString())
+                    .then((range) => callbackConditional(range, async () => {
+                        await updateValues("Main!C" + (selected_chan).toString(), [[""]]);
+                        await updateValues("Main!D" + (selected_chan).toString(), [[""]]);
+                        await updateValues("Main!E" + (selected_chan).toString(), [[""]]);
+                        getValues("Main!F" + (selected_chan).toString())
+                            .then((range) => callbackConditionalYN(range, () => alert("Make sure to save this cell!!!"), undefined));
+                        document.getElementById("content").innerText = "Writing to database...";
+                        selectChannel();
+                        return;
+                    }, () => alert("The cell is not running.")));
                 return;
             }
 
             async function queue() {
-                let selIdx = document.getElementById("channel").selectedIndex + 2;
-                updateValues("Main!G" + (selIdx).toString(), [[document.getElementById("req_user").value]]);
+                if (selected_chan < 2) {
+                    resetForm();
+                    return;
+                }
+
+                await updateValues("Main!G" + (selected_chan).toString(), [[document.getElementById("req_user").value]]);
                 document.getElementById("content").innerText = "Writing to database...";
-                await sleep(DATABASE_WRITE_WAIT_MS);
                 selectChannel();
                 return;
             }
