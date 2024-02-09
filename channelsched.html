@@ -105,9 +105,7 @@
                         access_token = window.localStorage.getItem("gtoken");
                         gapi.auth.setToken({access_token: access_token});
                         getValues("A1")
-                            .catch(() => {
-                                tokenClient.requestAccessToken();
-                            });
+                            .catch(() => tokenClient.requestAccessToken());
                     } else {
                         tokenClient.requestAccessToken();
                     }
