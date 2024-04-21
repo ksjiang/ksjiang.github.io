@@ -9,7 +9,7 @@
         <script>
             function doConvert() {
                 try {
-                    document.getElementById("status").innerHTML = convertMNX(document.getElementById("inputMNX").value, document.getElementById("output"));
+                    document.getElementById("status").innerHTML = convertMNX(document.getElementById("inputMNX").value, "output");
                 } catch (e) {
                     document.getElementById("status").innerHTML = "Error! See console.";
                     throw e;
