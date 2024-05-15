@@ -97,7 +97,7 @@
     x = a_k (mod n_k)
 </pre>
 
-<p>it is possible to directly find <code>b_i</code> in the formulation <code>x = b_1 m_1 + b_2 m_2 + ... + b_k m_k</code> by generalizing the strategy for the two-congruence case. Here, <code>m_i = N / n_i</code> is the product of all of the moduli <i>except</i> <code>n_i</code>. This ensures that when <code>x</code> is taken modulo <code>n_i</code>, only the <code>b_i m_i</code> term contributes (all other terms are divisible by <code>n_i</code>). Not surprisingly, <code>b_i = a_i m_i' m_i</code>, where <code>m_i' = m_i^(-1) (mod n_i)</code>.</p>
+<p>it is possible to directly find <code>b_i</code> in the formulation <code>x = b_1 m_1 + b_2 m_2 + ... + b_k m_k</code> by generalizing the strategy for the two-congruence case. Here, <code>m_i = N / n_i</code> is the product of all of the moduli <i>except</i> <code>n_i</code>. This ensures that when <code>x</code> is taken modulo <code>n_i</code>, only the <code>b_i m_i</code> term contributes (all other terms are divisible by <code>n_i</code>). Not surprisingly, <code>b_i = a_i m_i'</code>, where <code>m_i' = m_i^(-1) (mod n_i)</code>.</p>
 
 <p>For our example system above,</p>
 
