@@ -1,0 +1,145 @@
+\documentclass[12pt]{article}
+
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage[margin=0.5in]{geometry}
+\usepackage{graphicx}
+\graphicspath{ {./Figures/} }
+
+\title{Compactness in Metric Spaces}
+\author{Kyle Jiang}
+\date{05/19/2024}
+
+\begin{document}
+
+\maketitle
+
+
+Here, we wish to prove the equivalence of a number of seemingly unrelated notions of compactness in metric spaces. We first recall the definition of (topological) compactness, which deals with open covers:
+
+\textbf{Definition. } A space $X$ is \emph{compact} if every open cover $\{ U_\alpha \}_{\alpha \in J}$ of $X$ contains a finite subcover of $X$.
+
+\vspace{1 \baselineskip}
+
+There is another notion known as limit point compactness:
+
+\textbf{Definition. } A space $X$ is \emph{limit point compact} if every infinite set $A \subseteq X$ has a limit point in $X$.
+
+Recall that a limit point $x$ of a set $A$ is such that every neighborhood of $x$ intersects $A$ at some point other than $x$ itself. An equivalent definition is $x$ is a limit point of $A$ if $x \in \text{Cl} (A - \{ x \})$.
+
+\vspace{1 \baselineskip}
+
+Yet another form of compactness deals with sequences:
+
+\textbf{Definition. } A space $X$ is \emph{sequentially compact} if every sequence $(x_n)_{n \in \mathbb{Z}^+}$ has a convergent subsequence.
+
+\vspace{1 \baselineskip}
+
+Finally, there is a form of compactness that is in general weaker than compactness, but which will prove to be very useful in deriving relationships among the other types of compactness:
+
+\textbf{Definition. } A \emph{countably compact} space $X$ is one for which every countable (open) cover of $X$ has a finite subcover.
+
+
+\vspace{2 \baselineskip}
+
+
+\textbf{Proposition. } If a space $X$ is $T_1$, then countable compactness and limit point compactness are equivalent.
+
+\textbf{Proof. } The converse requires $X$ to be $T_1$. The forward direction does not.
+
+($\implies$) Suppose $X$ is not limit point compact. Then there exists some infinite set $A \subseteq X$ that does not have a limit point. Consider any countably infinite subset $B = \{ b_n \}_{n \in \mathbb{Z}^+} \subseteq A$. It also cannot have a limit point. Using this set, we find a countable cover of $X$ with no finite subcover. Indeed, for each $b_n \in B$, because $b_n$ is not a limit point of $B$, there is some neighborhood $U_n$ of $b_n$ such that $B \cap U_n = \{ b_n \}$; that is to say, singletons are open in $B$. Then, simply consider the open cover of $B$ formed by the singletons $\{ b_n \}$; this cover has no finite subcover.
+
+($\impliedby$) Suppose $X$ is not countably compact. Suppose that the countable open cover $\{ U_n \}_{n \in \mathbb{Z}^+}$ of $X$ has no finite subcover. We use this cover to formulate an infinite set $A$ with no limit point. Select arbitrarily, for each $n \in \mathbb{Z}^+$, an element $a_n \in X - \bigcup_{i \le n} U_i$. Such a choice is always possible since $\{ U_n \}$ contains no finite subcover.
+
+First, it is easy to check that the set $A = \{ a_n \}_{n \in \mathbb{Z}^+}$ is infinite, for if not, then some element $x = a_n$ for infinitely many $n$. Since $\{ U_n \}$ is a cover of $X$, then $x \in U_{n_x}$ for \emph{some} $n_x \in \mathbb{Z}^+$. Then $a_i \notin U_{n_x}$ for each $i \ge n_x$, which is a contradiction.
+
+Then, we show that $A$ has no limit point. For any $x \in X$, let $n_x \in \mathbb{Z}^+$ be such that $x \in U_{n_x}$ (this is possible because $\{ U_n \}$ is a cover of $X$). Note that for any $i \ge n_x$, $a_i \notin U_n$. However, it could be the case that $x_i \in U_n$ for $i < n_x$. But because $X$ is $T_1$, the finite collection $\{ a_1, \dots, a_{n_x - 1} \} - \{ x \}$ is closed, so its complement $V_x = (X - \{ a_1, \dots, a_{n_x - 1} \}) \cup \{ x \}$ is a neighborhood of $x$. Then, consider that the neighborhood $U_{n_x} \cap V$ of $x$ excludes all elements of $B$ (except possibly $x$ itself), which shows that $x$ is not a limit point of $B$.
+
+
+\vspace{2 \baselineskip}
+
+
+\textbf{Definition. } An \emph{$\omega$-accumulation point} of a set $A \subseteq X$ is a point $p \in X$ such that each neighborhood of $p$ intersects $A$ in infinitely many points.
+
+\vspace{1 \baselineskip}
+
+\textbf{Proposition. } The following are equivalent:
+
+\begin{enumerate}
+\item $X$ is countably compact.
+\item Every infinite set $A \subseteq X$ has an $\omega$-accumulation point in $X$.
+\item Every sequence in $X$ has an accumulation point in $X$.
+\end{enumerate}
+
+\textbf{Proof. } We show that (1) implies (2), (2) implies (3), and (3) implies (1).
+
+($1 \implies 2$) Let $A \subseteq X$ be infinite. Let $B \subseteq A$ be a countably infinite subset of $A$. Suppose for the sake of contradiction that $B$ has no $\omega$-accumulation points. Then for any $x \in X$, there is a neighborhood $U_x$ of $x$ that intersects $B$ in only finitely many points. For each finite subset $K$ of $B$ (there are countably many of them), define $V_K$ to be the union of all $U_x$ such that $K = B \cap U_x$; note that each $V_K$ is open. Also, the collection $\{ V_K \}$ covers $X$ because for each $x \in X$, the chosen $U_x \subseteq V_{K_x}$, where $K_x = B \cap U_x$. Since $X$ is countably compact, there exists a finite subcover $\{ V_{K_1}, \dots, V_{K_N} \} \subseteq \{ V_K \}$ that covers $X$. Note, however, that
+
+$$B \cap \bigcup_{i = 1}^N V_{K_i} = \bigcup_{i = 1}^N (B \cap V_{K_i})$$
+
+being a finite union of finite sets, is finite. This is a contradiction because $B$ is infinite. Therefore, $B$ must have an $\omega$-accumulation point, which is obviously also an $\omega$-accumulation point of $A$.
+
+($2 \implies 3$) Let $(a_n)_{n \in \mathbb{Z}^+}$ be a sequence in $X$. Consider the set $A = \{ a_n \}$. If $A$ is finite, then there is some $x \in X$ such that $x = a_n$ for infinitely many $n \in \mathbb{Z}^+$. Such a point is clearly an accumulation point of $(a_n)$. If $A$ is infinite, then by hypothesis, it has an $\omega$-accumulation point $p \in X$. This point is clearly an accumulation point of $(a_n)$.
+
+($3 \implies 1$) Suppose that $X$ is not countably compact. Let $\{ U_n \}_{n \in \mathbb{Z}^+}$ be a countable cover of $X$ that does not contain a finite cover. Choose, for each $i \in \mathbb{Z}^+$, $a_i \in X - \bigcup_{n = 1}^i U_n$. This is always possible because $\{ U_n \}$ has no finite subcover. We claim that $(a_i)$ has no accumulation point. Suppose for the sake of contradiction that $a$ is an accumulation point of $(a_i)$. Since $\{ U_n \}$ cover $X$, there is some $n_a \in \mathbb{Z}^+$ such that $a \in U_{n_a}$. But by construction, $U_{n_a}$ misses all elements $a_i$ with $i > n_a$. Therefore, the neighborhood $U_{n_a}$ intersects at most a finite number of elements of $(a_i)$, which contradicts the hypothesis that $a$ is an accumulation point of $(a_i)$.
+
+
+\vspace{2 \baselineskip}
+
+\textbf{Proposition. } If a space $X$ is first countable, then countable compactness and sequential compactness are equivalent.
+
+\textbf{Proof. } The forward direction requires $X$ to be first countable. The converse does not.
+
+($\implies$) Suppose that $X$ is countably compact. Let $(a_n)_{n \in \mathbb{Z}^+}$ be a sequence, and consider the set $A = \{ a_n \}$. If $A$ is finite, then there is some $x \in X$ such that $x = a_n$ for infinitely many $n \in \mathbb{Z}^+$. Then a subsequence formed by taking just these elements converges, trivially, to $x$. The more interesting case is when $A$ is infinite. Then, we can apply the previous proposition ($1 \implies 2$) to show that $A$ has an $\omega$-accumulation point $a \in X$. We claim that there is a subsequence $(a_{n_j})_{j \in \mathbb{Z}^+}$ that converges to $a$.
+
+Let $\{ B_i \}_{i \in \mathbb{Z}^+}$ be a countable neighborhood basis of $a$ (guaranteed because $X$ is first countable). From this basis, we can create a nested neighborhood basis $\{ C_i \}_{i \in \mathbb{Z}^+}$ by taking, for each $i \in \mathbb{Z}^+$, $C_i = \bigcap_{j = 1}^i B_i$. Then, for each $j \in \mathbb{Z}^+$, since $C_j$ intersects $A$ in infinitely many points, select $a_{n_j} \in A \cap C_j$ such that $n_j$ is the smallest element of $\mathbb{Z}^+$ where $n_j > n_i$ for each $i < j$. The subsequence $(a_{n_j})$ converges to $a$, since any neighborhood $U$ of $a$ contains $C_{j_U}$ for some $j_U \in \mathbb{Z}^+$, and for any $j > j_U$, we have that $a_{n_j} \in C_j \subseteq C_{j_U} \subseteq U$.
+
+($\impliedby$) Suppose that $X$ is sequentially compact. Let $(a_n)_{n \in \mathbb{Z}^+}$ be an arbitrary sequence in $X$. Then there exists a subsequence $(a_{n_j})_{j \in \mathbb{Z}^+}$ that converges to some point $p \in X$. This point is clearly an accumulation point of the sequence $(a_n)$, since for any neighborhood $U$ of $p$, there exists some $j_U \in \mathbb{Z}^+$ such that $a_{n_j} \in U$ for each $j > j_U$. By the previous proposition ($3 \implies 1$), $X$ is countably compact.
+
+
+\vspace{2 \baselineskip}
+
+
+Now, we arrive at what we wish to prove, which is that all of the forms of compactness defined above are equivalent for metric spaces.
+
+\textbf{Proposition. } For a metric space $X$, the following are equivalent:
+
+\begin{enumerate}
+\item $X$ is compact.
+\item $X$ is sequentially compact.
+\item $X$ is limit point compact.
+\end{enumerate}
+
+\textbf{Proof. } We show that (1) implies (3), (3) implies (2), and finally that (2) implies (1).
+
+($1 \implies 3$) This is true for topological spaces in general and follows immediately from previous propositions.
+
+($3 \implies 2$) We note that all metric spaces are $T_1$, since given any $x \ne y \in X$, the neighborhood $B_d (x, d (x, y))$ of $x$ misses $y$ and the neighborhood $B_d (y, d (x, y))$ of $y$ misses $x$. This shows that $X$ is countably compact. Also, all metric spaces are first countable, since for any element $x \in X$, the collection
+
+$$\left\{ B_d \left( x, \frac{1}{n} \right) \big| n \in \mathbb{Z}^+ \right\}$$
+
+is a countable neighborhood basis of $x$. By a previous proposition, $X$ is sequentially compact.
+
+($2 \implies 1$) First, we show the following claim.
+
+\textbf{Proposition. } Let $X$ be a sequentially compact metric space. Let $\mathcal{A}$ be an open cover of $X$. Then there exists a number $\delta > 0$ such that every set $C \subseteq X$ with diameter smaller than $\delta$ is contained in some $A \in \mathcal{A}$.
+
+\textbf{Proof. } Assume the hypotheses of the claim. Suppose for the sake of contradiction that for every $\varepsilon > 0$, there exists a subset $C \subseteq X$ with diameter smaller than $\varepsilon$ that is not contained in any $A \in \mathcal{A}$. We can use this fact to construct a sequence as follows. For each $n \in \mathbb{Z}^+$, choose an arbitrary subset $C_n \subseteq X$ with diameter smaller than $\frac{1}{n} > 0$ that is not contained in any element of $\mathcal{A}$, and choose an arbitrary $x_n \in C_n$. Since $X$ is sequentially compact, the sequence $(x_n)$ has a subsequence, say, $(x_{n_j})_{j \in \mathbb{Z}^+}$, that converges to $x_0 \in X$. Suppose that the open set $A_0 \in \mathcal{A}$ contains $x_0$. Then, there is some $\varepsilon > 0$ such that $B_d (x_0, \varepsilon) \subseteq A_0$. Since $(x_{n_j})$ converges to $x_0$, there must exist some $J_1 \in \mathbb{Z}^+$ such that $x_{n_j} \in B_d \left( x_0, \frac{1}{2} \varepsilon \right)$ for each $j > J_1$. Also, take $J_2 \in \mathbb{Z}^+$ to be such that $n_{J_2} > \frac{2}{\varepsilon} \implies \frac{1}{n_{J_2}} < \frac{1}{2} \varepsilon$; for each $j > J_2$, it follows that the set $C_{n_j}$, containing the element $x_{n_j}$ and with diameter less than $\frac{1}{2} \varepsilon$, is contained in $B_d \left( x_{n_j}, \frac{1}{2} \varepsilon \right)$. For $j > \max \{ J_1, J_2 \}$, it follows that the set $C_{n_j} \subseteq B_d (x_0, \varepsilon) \implies C_{n_j} \subseteq A_0$, which contradicts the hypothesis that no $C_n$ is contained in any $A \in \mathcal{A}$.
+
+Next, we prove that a sequentially compact metric space $X$ is totally bounded.
+
+\textbf{Definition. } A metric space $X$ is \emph{totally bounded} if for every $\varepsilon > 0$, there exists a finite collection $\{ B_d (x_n, \varepsilon) \}_{n \in \mathbb{Z}^+}$ that covers $X$.
+
+\textbf{Proposition. } A sequentially compact metric space $X$ is totally bounded.
+
+\textbf{Proof. } Suppose that $X$ is not totally bounded; i.e., there exists some $\varepsilon > 0$ for which no finite collection $\{ B_d (x_1, \varepsilon), \dots, B_d (x_N, \varepsilon) \}$ covers $X$. We can construct a sequence as follows. Select $x_1 \in X$ arbitrarily. Now, for each positive integer $n > 1$, select $x_n \in X - \bigcup_{i = 1}^{n - 1} B_d (x_i, \varepsilon)$ (such a choice is always possible because of the hypothesis that no finite collection $\{ B_d (x_1, \varepsilon), \dots, B_d (x_N, \varepsilon) \}$ covers $X$). Note that by construction, for any pair $k \ne m \in \mathbb{Z}^+$, $d (x_k, x_m) \ge \varepsilon$. We claim that the sequence $(x_n)_{n \in \mathbb{Z}^+}$ does not have a convergent subsequence. Suppose for the sake of contradiction that $(x_n)$ has a convergent subsequence, say, $(x_{n_j})_{j \in \mathbb{Z}^+}$, that converges to $x_0 \in X$. Then there must exist some $J \in \mathbb{Z}^+$ such that for each $j > J$, $x_{n_j} \in B_d \left( x_0, \frac{1}{2} \varepsilon \right)$. Since $x_{n_{J + 1}}, x_{n_{J + 2}} \in B_d \left( x_0, \frac{1}{2} \varepsilon \right)$, then
+
+$$d (x_{n_{J + 1}}, x_{n_{J + 2}}) \le d (x_0, x_{n_{J + 1}}) + d (x_0, x_{n_{J + 2}}) < \frac{1}{2} \varepsilon + \frac{1}{2} \varepsilon = \varepsilon$$
+
+which contradicts the previous implication $n_{J + 1} \ne n_{J + 2} \implies d (x_{n_{J + 1}}, x_{n_{J + 2}}) \ge \varepsilon$.
+
+Now we return to the original statement that was to be proved.
+
+\textbf{Proof. } Assume that $X$ is a sequentially compact metric space. Let $\mathcal{A}$ be an open cover of $X$. The first proposition guarantees some $\delta > 0$ such that every subset of $X$ with diameter smaller than $\delta$ is contained in some element of $\mathcal{A}$. Use the second proposition to guarantee a finite collection $\{ B_d (x_1, \frac{1}{3} \delta), \dots, B_d (x_N, \frac{1}{3} \delta) \}$ that covers $X$. Each element $B_d (x_i, \frac{1}{3} \delta)$ of this collection has a diameter that is no greater than $\frac{2}{3} \delta < \delta$, so each of them is contained in some element $A_i \in \mathcal{A}$. Then the finite subcollection $\{ A_1, \dots, A_N \} \subseteq \mathcal{A}$ covers $X$.
+
+
+\end{document}
