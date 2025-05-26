@@ -94,14 +94,15 @@
 </head>
 
 <body>
-    <ul>Quick JMPs
+    <h1>Intel 8085 Reference</h1>
+
+    <ul>Contents
         <li><a href = "#iset">1.</a> Interactive Instruction Set</li>
         <li><a href = "#undoc">2.</a> Undocumented Flags and Instructions</li>
     </ul>
 
-    <h1>Intel 8085 Reference</h1>
-
     <h2 id = "iset">1. Interactive Instruction Set</h2>
+    <p>Use the following to search the Intel 8085 instruction set. Hovering over an instruction will display information about its size, number of processor t-states, and the flags that are affected. Only officially documented instructions are listed. Information about undocumented instructions can found <a href = "#undoc">here</a>.</p>
     <input type = "search" id = "lookup" class = "round" onkeyup = "updatei()">
     <table id = "itable" class = "center">
         <script>
@@ -160,20 +161,20 @@
     </table>
 
     <h2 id = "undoc">2. Undocumented Flags and Instructions</h2>
-    <p>The instruction set and condition flags in <href a = "#iset">1</href> are officially documented in Intel's 8085 programming manual. However, reverse engineering efforts have revealed two undocumented condition flags (<code>V</code> and <code>K</code>) and ten undocumented operation codes.</p>
+    <p>Reverse engineering efforts have revealed two condition flags (<code>V</code> and <code>K</code>) and ten operation codes that are not <a href = "#iset">officially documented</a>.</p>
     <p>The <code>V</code> condition flag is bit 1 of the flags register and indicates a two's-complement overflow for all arithmetic operations. An overflow in signed arithmetic occurs when the sign bit (most-significant bit) of the result is inconsistent with those of the operands and operation. For example, suppose we have <code>A = 7FH</code> (positive) and <code>B = 01H</code> (also positive). Executing <code>ADD B</code> would give <code>A = 80H</code> (negative). Two positive numbers cannot add to a negative one, and the <code>V</code> flag would be set to indicate an overflow.</p>
-    <p>The <code>K</code> condition flag is bit 5 of the flags register and has two purposes: (1) it indicates overflow and underflow for register pair (16-bit) increments and decrements, and (2) it reflects the outcome of an arithmetic comparison, similar to the "less than" and "greater than" conditions in later Intel processors. For example, suppose we have <code>A = 0FFH</code> (negative) and <code>B = 01H</code> (positive). If we execute <code>CMP B</code>, the <code>K</code> flag would be set to indicate that <code>B</code> is greater than <code>A</code>, since any positive number is greater than any positive number. Note that in this operation, the <code>C</code> flag is cleared because there is no carry; when the operands are treated as unsigned numbers, <code>A</code> is indeed greater than <code>B</code>.</p>
+    <p>The <code>K</code> condition flag is bit 5 of the flags register and has two purposes: (1) it indicates overflow and underflow for register pair (16-bit) increments and decrements, and (2) it reflects the outcome of an arithmetic comparison, similar to the "less than" and "greater than" conditions in later Intel processors. For example, suppose we have <code>A = 0FFH</code> (negative) and <code>B = 01H</code> (positive). If we execute <code>CMP B</code>, the <code>K</code> flag would be set to indicate that <code>B</code> is greater than <code>A</code>, since any positive number is greater than any negative number. Note that in this operation, the <code>C</code> flag is cleared because there is no carry; when the operands are treated as unsigned numbers, <code>A</code> is indeed greater than <code>B</code>.</p>
     <p>The undocumented opcodes are described below.</p>
-    <p><code>DSUB (08H)</code> Subtract BC from HL. <code>t-states: 10, flags: S|Z|AC|P|C</code></p>
-    <p><code>ARHL (10H)</code> Arithmetic right shift of HL. <code>t-states: 7; flags: C</code></p>
-    <p><code>RDEL (18H)</code> Rotate DE left through carry. <code>t-states: 10; flags: C</code></p>
-    <p><code>LDHI (28H)</code> Load DE with HL plus immediate byte. <code>t-states: 10; flags: (none)</code></p>
-    <p><code>LDSI (38H)</code> Load DE with SP plus immediate byte. <code>t-states: 10; flags: (none)</code></p>
-    <p><code>RSTV (0C8H)</code> If <code>V</code> flag is set, <code>CALL 40H</code>; continue otherwise. <code>t-states: 6 (no branch), 12 (branch); flags: (none)</code></p>
-    <p><code>LHLX (0EDH)</code> Load HL from the memory location addressed by DE. <code>t-states: 10; flags: (none)</code></p>
-    <p><code>SHLX (0D9H)</code> Store HL into the memory location addressed by DE. <code>t-states: 10; flags: (none)</code></p>
-    <p><code>JK (0FDH)</code> If <code>K</code> flag is set, jump to the immediate address; continue otherwise. <code>t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
-    <p><code>JNK (0DDH)</code> If <code>K</code> flag is not set, jump to the immediate address; continue otherwise. <code>t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
+    <p><code>DSUB (08H)</code> Subtract BC from HL. <code>size: 1; t-states: 10, flags: S|Z|AC|P|C</code></p>
+    <p><code>ARHL (10H)</code> Arithmetic right shift of HL. <code>size: 1; t-states: 7; flags: C</code></p>
+    <p><code>RDEL (18H)</code> Rotate DE left through carry. <code>size: 1; t-states: 10; flags: C</code></p>
+    <p><code>LDHI (28H)</code> Load DE with HL plus immediate byte. <code>size: 2; t-states: 10; flags: (none)</code></p>
+    <p><code>LDSI (38H)</code> Load DE with SP plus immediate byte. <code>size: 2; t-states: 10; flags: (none)</code></p>
+    <p><code>RSTV (0C8H)</code> If <code>V</code> flag is set, <code>CALL 40H</code>; continue otherwise. <code>size: 1; t-states: 6 (no branch), 12 (branch); flags: (none)</code></p>
+    <p><code>LHLX (0EDH)</code> Load HL from the memory location addressed by DE. <code>size: 1; t-states: 10; flags: (none)</code></p>
+    <p><code>SHLX (0D9H)</code> Store HL into the memory location addressed by DE. <code>size: 1; t-states: 10; flags: (none)</code></p>
+    <p><code>JK (0FDH)</code> If <code>K</code> flag is set, jump to the immediate address; continue otherwise. <code>size: 3; t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
+    <p><code>JNK (0DDH)</code> If <code>K</code> flag is not set, jump to the immediate address; continue otherwise. <code>size: 3; t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
 
 </body>
 
