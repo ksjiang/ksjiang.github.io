@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Intel 8085 Reference</title>
+    <script>"use strict"</script>
+    <script src = "https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script>
+        var idata = (function() {
+            var json = null;
+            $.ajax({
+                'async': false,
+                'global': false,
+                'url': "scripts/i8085_iset.json",
+                'dataType': "json",
+                'success': function(data) {
+                    idata = data;
+                }
+            });
+            return idata;
+        })();
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function updatei() {
+            var i;
+            var s = document.getElementById('lookup').value;
+            for (i = 0; i < 256; i++) {
+                var o = document.getElementById('inst' + i.toString());
+                var ot = o.textContent;
+                var l = s.length < ot.length ? s.length : ot.length;
+                o.classList.add('nah');
+                if (s.slice(0, l).toUpperCase() == ot.slice(0, l).toUpperCase()) {
+                    o.classList.remove('nah');
+                }
+                await sleep(1);
+            }
+            return;
+        }
+
+        async function gswitch(i, set, add) {
+            var x;
+            var ndx;
+            var testid;
+            var obj;
+            for (x = 0; x < 16; x++) {
+                ndx = set ? 16 * i + x : 16 * x + i;
+                testid = 'inst' + ndx.toString();
+                obj = document.getElementById(testid);
+                if (add) {
+                    obj.classList.add('active');
+                }
+                else {
+                    obj.classList.remove('active');
+                }
+                await sleep(20);
+            }
+            return;
+        }
+
+        function cswitch(i, set) {
+            var r = Math.floor(i / 16);
+            var c = i % 16;
+            var o = document.getElementById('rh' + r.toString());
+            var p = document.getElementById('ch' + c.toString());
+            if (set) {
+                o.classList.add('active');
+                p.classList.add('active');
+            }
+            else {
+                o.classList.remove('active');
+                p.classList.remove('active');
+            }
+            ttshow(i, set);
+            return;
+        }
+
+        function ttshow(i, set) {
+            var o = document.getElementById('tt' + i);
+            o.classList.add('open');
+            if (!set) {
+                o.classList.remove('open');
+            }
+            return;
+        }
+
+        function get_digit(n, pos) {
+            return Math.floor(n / Math.pow(10, pos) % 10);
+        }
+    </script>
+    <link rel="stylesheet" href="css/i8085.css">
+</head>
+
+<body>
+    <ul>Quick JMPs
+        <li><a href = "#iset">1.</a> Interactive Instruction Set</li>
+        <li><a href = "#undoc">2.</a> Undocumented Flags and Instructions</li>
+    </ul>
+
+    <h1>Intel 8085 Reference</h1>
+
+    <h2 id = "iset">1. Interactive Instruction Set</h2>
+    <input type = "search" id = "lookup" class = "round" onkeyup = "updatei()">
+    <table id = "itable" class = "center">
+        <script>
+            //header row
+            document.write('<tr>\n<td></td>\n');
+            var i;
+            for (i = 0; i < 16; i++) {
+                document.write('<th class="horizhead" id="ch' + i.toString() + '" onmouseover="gswitch(' + i.toString() + ', false, true)" onmouseout="gswitch(' + i.toString() + ', false, false)">' + i.toString(16).toUpperCase() + '</th>\n');
+            }
+            document.write('</tr>\n');
+            
+            //subsequent rows
+            var row;
+            var col;
+            for (row = 0; row < 16; row++) {
+                document.write('<tr>\n<th class="verthead" id="rh' + row.toString() + '" onmouseover="gswitch(' + row.toString() + ', true, true)" onmouseout="gswitch(' + row.toString() + ', true, false)">' + row.toString(16).toUpperCase() + '</th>\n');
+                for (col = 0; col < 16; col++) {
+                    var ndx = 16 * row + col;
+                    var obj = idata['inst'][ndx];
+                    var objdat = [obj.desc + '</br>\n'];
+                    if (obj.name != '-') {
+                        objdat.push('<b>SIZE</b>: ' + obj.size + ' byte' + ((obj.size == 1) ? '' : 's') + '</br>\n');
+                        if (obj.hasOwnProperty('tstates')) {
+                            objdat.push('<b>T-STATES</b>: ' + obj.tstates + '</br>\n');
+                        }
+                        else {
+                            objdat.push('<b>T-STATES (Branch Not Taken)</b>: ' + obj.tstatesbnt + '</br>\n');
+                            objdat.push('<b>T-STATES (Branch Taken)</b>: ' + obj.tstatesbt + '</br>\n');
+                        }
+                        var flags = ['S', 'Z', 'AC', 'P', 'C'];
+                        var s = '';
+                        for (var i = 0; i < flags.length ; i++) {
+                            switch (get_digit(obj.flags, flags.length - i - 1)) {
+                                case 0:
+                                    s += '<strike>' + flags[i] + '</strike>';
+                                    break;
+                                case 1:
+                                    s += flags[i];
+                                    break;
+                                case 2:
+                                    s += flags[i].toLowerCase();
+                                    break;
+                                case 3:
+                                    s += '<b>' + flags[i] + '</b>';
+                            }
+                            s += ((i == flags.length - 1) ? '' : ' | ');
+                        }
+                        objdat.push('<b>FLAGS</b>: ' + s);
+                    }
+                    objdathtml = objdat.join('');
+                    document.write('<td id="inst' + ndx.toString() + '" onmouseover="cswitch(' + ndx.toString() + ', true)" onmouseout="cswitch(' + ndx.toString() + ', false)">' + obj.name + '<span class="tooltip" id="tt' + ndx.toString() + '">' + objdathtml + '</span></td>');
+                }
+                document.write('</tr>\n');
+            }
+        </script>
+    </table>
+
+    <h2 id = "undoc">2. Undocumented Flags and Instructions</h2>
+    <p>The instruction set and condition flags in <href a = "#iset">1</href> are officially documented in Intel's 8085 programming manual. However, reverse engineering efforts have revealed two undocumented condition flags (<code>V</code> and <code>K</code>) and ten undocumented operation codes.</p>
+    <p>The <code>V</code> condition flag is bit 1 of the flags register and indicates a two's-complement overflow for all arithmetic operations. An overflow in signed arithmetic occurs when the sign bit (most-significant bit) of the result is inconsistent with those of the operands and operation. For example, suppose we have <code>A = 7FH</code> (positive) and <code>B = 01H</code> (also positive). Executing <code>ADD B</code> would give <code>A = 80H</code> (negative). Two positive numbers cannot add to a negative one, and the <code>V</code> flag would be set to indicate an overflow.</p>
+    <p>The <code>K</code> condition flag is bit 5 of the flags register and has two purposes: (1) it indicates overflow and underflow for register pair (16-bit) increments and decrements, and (2) it reflects the outcome of an arithmetic comparison, similar to the "less than" and "greater than" conditions in later Intel processors. For example, suppose we have <code>A = 0FFH</code> (negative) and <code>B = 01H</code> (positive). If we execute <code>CMP B</code>, the <code>K</code> flag would be set to indicate that <code>B</code> is greater than <code>A</code>, since any positive number is greater than any positive number. Note that in this operation, the <code>C</code> flag is cleared because there is no carry; when the operands are treated as unsigned numbers, <code>A</code> is indeed greater than <code>B</code>.</p>
+    <p>The undocumented opcodes are described below.</p>
+    <p><code>DSUB (08H)</code> Subtract BC from HL. <code>t-states: 10, flags: S|Z|AC|P|C</code></p>
+    <p><code>ARHL (10H)</code> Arithmetic right shift of HL. <code>t-states: 7; flags: C</code></p>
+    <p><code>RDEL (18H)</code> Rotate DE left through carry. <code>t-states: 10; flags: C</code></p>
+    <p><code>LDHI (28H)</code> Load DE with HL plus immediate byte. <code>t-states: 10; flags: (none)</code></p>
+    <p><code>LDSI (38H)</code> Load DE with SP plus immediate byte. <code>t-states: 10; flags: (none)</code></p>
+    <p><code>RSTV (0C8H)</code> If <code>V</code> flag is set, <code>CALL 40H</code>; continue otherwise. <code>t-states: 6 (no branch), 12 (branch); flags: (none)</code></p>
+    <p><code>LHLX (0EDH)</code> Load HL from the memory location addressed by DE. <code>t-states: 10; flags: (none)</code></p>
+    <p><code>SHLX (0D9H)</code> Store HL into the memory location addressed by DE. <code>t-states: 10; flags: (none)</code></p>
+    <p><code>JK (0FDH)</code> If <code>K</code> flag is set, jump to the immediate address; continue otherwise. <code>t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
+    <p><code>JNK (0DDH)</code> If <code>K</code> flag is not set, jump to the immediate address; continue otherwise. <code>t-states: 7 (no branch), 10 (branch); flags: (none)</code></p>
+
+</body>
+
+</html>

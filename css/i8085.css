@@ -1,0 +1,100 @@
+@font-face {
+    font-family: 'Product Sans';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Open Sans'), local('OpenSans'), url(https://fonts.gstatic.com/s/productsans/v5/HYvgU2fE2nRJvZ5JFAumwegdm0LZdjqr5-oayXSOefg.woff2) format('woff2');
+  }
+
+html {
+    font-family: 'Product Sans';
+}
+
+#lookup.round {
+    border: 1px solid #3F3F3F;
+    border-radius: 15px;
+    font-family: 'Product Sans';
+    font-size: 16px;
+    margin: 10px;
+    padding: 5px 5px 5px 20px;
+    width: 25%;
+}
+
+#lookup:focus {
+    outline: 0;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+}
+
+#itable {
+    user-select: none;
+}
+
+table.center {
+    border: 2px solid #000000;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#itable th {
+    background-color: #88882B;
+    color: #FFFFFF;
+}
+
+th.horizhead {
+    border-bottom: 2px solid #80CDAB;
+    transition: background-color 0.5s;
+}
+
+#itable th.horizhead.active {
+    background-color: #80CDAB;
+}
+
+th.verthead {
+    border-right: 2px solid #7F3254;
+    transition: background-color 0.5s;
+}
+
+#itable th.verthead.active {
+    background-color: #7F3254;
+}
+
+#itable td {
+    background-color: #F3F3F3;
+    font-size: 12px;
+    padding: 8px;
+    text-align: center;
+    transition: color 0.75s;
+}
+
+#itable td.active {
+    background-color: #00CC66;
+}
+
+#itable td.nah {
+    background-color: #3F3F3F;
+}
+
+#itable td:hover {
+    background-color: #3F3F3F;
+    color: #FFFFFF;
+    outline: 2px solid #00CC66;
+}
+
+#itable .tooltip.open {
+    background-color: rgba(63, 63, 63, 0.9);
+    border-bottom: 2px solid #80CDAB;
+    border-radius: 0px 10px;
+    border-right: 2px solid #7F3254;
+    display: block;
+    font-size: 16px;
+    padding: 5px;
+    pointer-events: none;
+    text-align: left;
+}
+
+.tooltip {
+    display: none;
+    position: absolute;
+}

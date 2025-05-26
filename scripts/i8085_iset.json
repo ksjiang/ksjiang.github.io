@@ -1,0 +1,1822 @@
+{
+    "cpu": "Intel 8085",
+    "size": 80,
+    "inst": [
+        {
+            "name": "NOP",
+            "desc": "No Operation",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "LXI B, d16",
+            "desc": "Load Register Pair Immediate (BC)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "STAX B",
+            "desc": "Store Accumulator Indirect (BC)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INX B",
+            "desc": "Increment Register Pair (BC)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR B",
+            "desc": "Increment Register (B)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR B",
+            "desc": "Decrement Register (B)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI B, d8",
+            "desc": "Move Immediate (B)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "RLC",
+            "desc": "Rotate Accumulator Left",
+            "tstates": 4,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "DAD B",
+            "desc": "Double Register Add (BC)",
+            "tstates": 10,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "LDAX B",
+            "desc": "Load Accumulator Indirect (BC)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "DCX B",
+            "desc": "Decrement Register Pair (BC)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR C",
+            "desc": "Increment Register (C)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR C",
+            "desc": "Decrement Register (C)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI C, d8",
+            "desc": "Move Immediate (C)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "RRC",
+            "desc": "Rotate Accumulator Right",
+            "tstates": 4,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "LXI D, d16",
+            "desc": "Load Register Pair Immediate (DE)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "STAX D",
+            "desc": "Store Accumulator Indirect (DE)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INX D",
+            "desc": "Increment Register Pair (DE)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR D",
+            "desc": "Increment Register (D)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR D",
+            "desc": "Decrement Register (D)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI D, d8",
+            "desc": "Move Immediate (D)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "RAL",
+            "desc": "Rotate Left Through Carry",
+            "tstates": 4,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "DAD D",
+            "desc": "Double Register Add (DE)",
+            "tstates": 10,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "LDAX D",
+            "desc": "Load Accumulator Indirect (DE)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "DCX D",
+            "desc": "Decrement Register Pair (DE)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR E",
+            "desc": "Increment Register (E)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR E",
+            "desc": "Decrement Register (E)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI E, d8",
+            "desc": "Move Immediate (E)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "RAR",
+            "desc": "Rotate Right Through Carry",
+            "tstates": 4,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "RIM",
+            "desc": "Read Interrupt Mask",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "LXI H, d16",
+            "desc": "Load Register Pair Immediate (HL)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "SHLD add16",
+            "desc": "Store H and L Direct",
+            "tstates": 16,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "INX H",
+            "desc": "Increment Register Pair (HL)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR H",
+            "desc": "Increment Register (H)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR H",
+            "desc": "Decrement Register (H)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI H, d8",
+            "desc": "Move Immediate (H)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "DAA",
+            "desc": "Decimal Adjust Accumulator",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "DAD H",
+            "desc": "Double Register Add (HL)",
+            "tstates": 10,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "LHLD addr16",
+            "desc": "Load H and L Direct",
+            "tstates": 7,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "DCX H",
+            "desc": "Decrement Register Pair (HL)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR L",
+            "desc": "Increment Register (L)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR L",
+            "desc": "Decrement Register (L)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI L, d8",
+            "desc": "Move Immediate (L)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "CMA",
+            "desc": "Complement Accumulator",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "SIM",
+            "desc": "Set Interrupt Mask",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "LXI SP, d16",
+            "desc": "Load Register Pair Immediate (SP)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "STA add16",
+            "desc": "Store Accumulator Direct",
+            "tstates": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "INX SP",
+            "desc": "Increment Register Pair (SP)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR M",
+            "desc": "Increment Memory",
+            "tstates": 10,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR M",
+            "desc": "Decrement Memory",
+            "tstates": 10,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI M, d8",
+            "desc": "Move Immediate to Memory",
+            "tstates": 10,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "STC",
+            "desc": "Set Carry Flag",
+            "tstates": 4,
+            "flags": 3,
+            "size": 1
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "DAD SP",
+            "desc": "Double Register Add (SP)",
+            "tstates": 10,
+            "flags": 1,
+            "size": 1
+        },
+        {
+            "name": "LDA addr16",
+            "desc": "Load Accumulator Direct",
+            "tstates": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "DCX SP",
+            "desc": "Decrement Register Pair (SP)",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "INR A",
+            "desc": "Increment Register (A)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "DCR A",
+            "desc": "Decrement Register (A)",
+            "tstates": 4,
+            "flags": 11110,
+            "size": 1
+        },
+        {
+            "name": "MVI A, d8",
+            "desc": "Move Immediate (A)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "CMC",
+            "desc": "Complement Carry Flag",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, B",
+            "desc": "Move (B to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, C",
+            "desc": "Move (C to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, D",
+            "desc": "Move (D to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, E",
+            "desc": "Move (E to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, H",
+            "desc": "Move (H to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, L",
+            "desc": "Move (L to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, M",
+            "desc": "Move (M to B)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV B, A",
+            "desc": "Move (A to B)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, B",
+            "desc": "Move (B to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, C",
+            "desc": "Move (C to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, D",
+            "desc": "Move (D to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, E",
+            "desc": "Move (E to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, H",
+            "desc": "Move (H to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, L",
+            "desc": "Move (L to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, M",
+            "desc": "Move (M to C)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV C, A",
+            "desc": "Move (A to C)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, B",
+            "desc": "Move (B to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, C",
+            "desc": "Move (C to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, D",
+            "desc": "Move (D to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, E",
+            "desc": "Move (E to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, H",
+            "desc": "Move (H to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, L",
+            "desc": "Move (L to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, M",
+            "desc": "Move (M to D)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV D, A",
+            "desc": "Move (A to D)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, B",
+            "desc": "Move (B to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, C",
+            "desc": "Move (C to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, D",
+            "desc": "Move (D to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, E",
+            "desc": "Move (E to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, H",
+            "desc": "Move (H to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, L",
+            "desc": "Move (L to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, M",
+            "desc": "Move (M to E)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV E, A",
+            "desc": "Move (A to E)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, B",
+            "desc": "Move (B to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, C",
+            "desc": "Move (C to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, D",
+            "desc": "Move (D to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, E",
+            "desc": "Move (E to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, H",
+            "desc": "Move (H to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, L",
+            "desc": "Move (L to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, M",
+            "desc": "Move (M to H)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV H, A",
+            "desc": "Move (A to H)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, B",
+            "desc": "Move (B to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, C",
+            "desc": "Move (C to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, D",
+            "desc": "Move (D to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, E",
+            "desc": "Move (E to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, H",
+            "desc": "Move (H to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, L",
+            "desc": "Move (L to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, M",
+            "desc": "Move (M to L)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV L, A",
+            "desc": "Move (A to L)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, B",
+            "desc": "Move (B to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, C",
+            "desc": "Move (C to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, D",
+            "desc": "Move (D to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, E",
+            "desc": "Move (E to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, H",
+            "desc": "Move (H to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, L",
+            "desc": "Move (L to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "HLT",
+            "desc": "Halt",
+            "tstates": 5,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV M, A",
+            "desc": "Move (A to M)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, B",
+            "desc": "Move (B to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, C",
+            "desc": "Move (C to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, D",
+            "desc": "Move (D to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, E",
+            "desc": "Move (E to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, H",
+            "desc": "Move (H to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, L",
+            "desc": "Move (L to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, M",
+            "desc": "Move (M to A)",
+            "tstates": 7,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "MOV A, A",
+            "desc": "Move (A to A)",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "ADD B",
+            "desc": "Add (B)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD C",
+            "desc": "Add (C)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD D",
+            "desc": "Add (D)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD E",
+            "desc": "Add (E)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD H",
+            "desc": "Add (H)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD L",
+            "desc": "Add (L)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD M",
+            "desc": "Add (M)",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADD A",
+            "desc": "Add (A)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC B",
+            "desc": "Add with Carry (B)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC C",
+            "desc": "Add with Carry (C)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC D",
+            "desc": "Add with Carry (D)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC E",
+            "desc": "Add with Carry (E)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC H",
+            "desc": "Add with Carry (H)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC L",
+            "desc": "Add with Carry (L)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC M",
+            "desc": "Add with Carry (M)",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ADC A",
+            "desc": "Add with Carry (A)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB B",
+            "desc": "Subtract (B)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB C",
+            "desc": "Subtract (C)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB D",
+            "desc": "Subtract (D)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB E",
+            "desc": "Subtract (E)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB H",
+            "desc": "Subtract (H)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB L",
+            "desc": "Subtract (L)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB M",
+            "desc": "Subtract (M)",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SUB A",
+            "desc": "Subtract (A)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB B",
+            "desc": "Subtract with Borrow (B)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB C",
+            "desc": "Subtract with Borrow (C)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB D",
+            "desc": "Subtract with Borrow (D)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB E",
+            "desc": "Subtract with Borrow (E)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB H",
+            "desc": "Subtract with Borrow (H)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB L",
+            "desc": "Subtract with Borrow (L)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB M",
+            "desc": "Subtract with Borrow (M)",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "SBB A",
+            "desc": "Subtract with Borrow (A)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "ANA B",
+            "desc": "Logical AND with Accumulator (B)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA C",
+            "desc": "Logical AND with Accumulator (C)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA D",
+            "desc": "Logical AND with Accumulator (D)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA E",
+            "desc": "Logical AND with Accumulator (E)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA H",
+            "desc": "Logical AND with Accumulator (H)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA L",
+            "desc": "Logical AND with Accumulator (L)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA M",
+            "desc": "Logical AND with Accumulator (M)",
+            "tstates": 7,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "ANA A",
+            "desc": "Logical AND with Accumulator (A)",
+            "tstates": 4,
+            "flags": 11112,
+            "size": 1
+        },
+        {
+            "name": "XRA B",
+            "desc": "Logical XOR with Accumulator (B)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA C",
+            "desc": "Logical XOR with Accumulator (C)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA D",
+            "desc": "Logical XOR with Accumulator (D)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA E",
+            "desc": "Logical XOR with Accumulator (E)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA H",
+            "desc": "Logical XOR with Accumulator (H)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA L",
+            "desc": "Logical XOR with Accumulator (L)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA M",
+            "desc": "Logical XOR with Accumulator (M)",
+            "tstates": 7,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "XRA A",
+            "desc": "Logical XOR with Accumulator (A)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA B",
+            "desc": "Logical OR with Accumulator (B)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA C",
+            "desc": "Logical OR with Accumulator (C)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA D",
+            "desc": "Logical OR with Accumulator (D)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA E",
+            "desc": "Logical OR with Accumulator (E)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA H",
+            "desc": "Logical OR with Accumulator (H)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA L",
+            "desc": "Logical OR with Accumulator (L)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA M",
+            "desc": "Logical OR with Accumulator (M)",
+            "tstates": 7,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "ORA A",
+            "desc": "Logical OR with Accumulator (A)",
+            "tstates": 4,
+            "flags": 11212,
+            "size": 1
+        },
+        {
+            "name": "CMP B",
+            "desc": "Compare with Accumulator (B)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP C",
+            "desc": "Compare with Accumulator (C)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP D",
+            "desc": "Compare with Accumulator (D)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP E",
+            "desc": "Compare with Accumulator (E)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP H",
+            "desc": "Compare with Accumulator (H)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP L",
+            "desc": "Compare with Accumulator (L)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP M",
+            "desc": "Compare with Accumulator (M)",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "CMP A",
+            "desc": "Compare with Accumulator (A)",
+            "tstates": 4,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "RNZ add16",
+            "desc": "Return if Not Zero",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "POP B",
+            "desc": "Pop (BC)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "JNZ add16",
+            "desc": "Jump if Not Zero",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "JMP add16",
+            "desc": "Jump",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "CNZ add16",
+            "desc": "Call if Not Zero",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "PUSH B",
+            "desc": "Push (BC)",
+            "tstates": 13,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "ADI d8",
+            "desc": "Add Immediate",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 2
+        },
+        {
+            "name": "RST 0",
+            "desc": "Restart (00H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RZ add16",
+            "desc": "Return if Zero",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "RET add16",
+            "desc": "Return",
+            "tstates": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "JZ add16",
+            "desc": "Jump if Zero",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "CZ add16",
+            "desc": "Call if Zero",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "CALL add16",
+            "desc": "Call",
+            "tstates": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "ACI d8",
+            "desc": "Add with Carry Immediate",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 2
+        },
+        {
+            "name": "RST 1",
+            "desc": "Restart (08H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RNC add16",
+            "desc": "Return if Not Carry",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "POP D",
+            "desc": "Pop (DE)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "JNC add16",
+            "desc": "Jump if Not Carry",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "OUT add8",
+            "desc": "Output to Port",
+            "tstates": 10,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "CNC add16",
+            "desc": "Call if Not Carry",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "PUSH D",
+            "desc": "Push (DE)",
+            "tstates": 13,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "SUI d8",
+            "desc": "Subtract Immediate",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 2
+        },
+        {
+            "name": "RST 2",
+            "desc": "Restart (10H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RC add16",
+            "desc": "Return if Carry",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "JC add16",
+            "desc": "Jump if Carry",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "IN add8",
+            "desc": "Input from Port",
+            "tstates": 10,
+            "flags": 0,
+            "size": 2
+        },
+        {
+            "name": "CC add16",
+            "desc": "Call if Carry",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "SBI d8",
+            "desc": "Subtract with Borrow Immediate",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 2
+        },
+        {
+            "name": "RST 3",
+            "desc": "Restart (18H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RPO add16",
+            "desc": "Return if Parity Odd",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "POP H",
+            "desc": "Pop (HL)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "JPO add16",
+            "desc": "Jump if Parity Odd",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "XTHL",
+            "desc": "Exchange Top of Stack with HL",
+            "tstates": 16,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "CPO add16",
+            "desc": "Call if Parity Odd",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "PUSH H",
+            "desc": "Push (HL)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "ANI d8",
+            "desc": "Logical AND with Accumulator Immediate",
+            "tstates": 7,
+            "flags": 11112,
+            "size": 2
+        },
+        {
+            "name": "RST 4",
+            "desc": "Restart (20H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RPE add16",
+            "desc": "Return if Parity Even",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "PCHL",
+            "desc": "Move HL to PC",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "JPE add16",
+            "desc": "Jump if Parity Even",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "XCHG",
+            "desc": "Exchange DE with HL",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "CPE add16",
+            "desc": "Call if Parity Even",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "XRI d8",
+            "desc": "Logical XOR with Accumulator Immediate",
+            "tstates": 7,
+            "flags": 11212,
+            "size": 2
+        },
+        {
+            "name": "RST 5",
+            "desc": "Restart (28H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RP add16",
+            "desc": "Return if Positive",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "POP PSW",
+            "desc": "Pop (PSW)",
+            "tstates": 10,
+            "flags": 11111,
+            "size": 1
+        },
+        {
+            "name": "JP add16",
+            "desc": "Jump if Positive",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "DI",
+            "desc": "Disable Interrupts",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "CP add16",
+            "desc": "Call if Positive",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "PUSH PSW",
+            "desc": "Push (PSW)",
+            "tstates": 10,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "ORI d8",
+            "desc": "Logical OR with Accumulator Immediate",
+            "tstates": 7,
+            "flags": 11212,
+            "size": 2
+        },
+        {
+            "name": "RST 6",
+            "desc": "Restart (30H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "RM add16",
+            "desc": "Return if Minus",
+            "tstatesbnt": 6,
+            "tstatesbt": 12,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "SPHL",
+            "desc": "Move HL to SP",
+            "tstates": 6,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "JM add16",
+            "desc": "Jump if Minus",
+            "tstatesbnt": 5,
+            "tstatesbt": 10,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "EI",
+            "desc": "Enable Interrupts",
+            "tstates": 4,
+            "flags": 0,
+            "size": 1
+        },
+        {
+            "name": "CM add16",
+            "desc": "Call if Minus",
+            "tstatesbnt": 9,
+            "tstatesbt": 18,
+            "flags": 0,
+            "size": 3
+        },
+        {
+            "name": "-",
+            "desc": "Undocumented",
+            "tstates": 0,
+            "flags": 0,
+            "size": 0
+        },
+        {
+            "name": "CPI d8",
+            "desc": "Compare with Accumulator Immediate",
+            "tstates": 7,
+            "flags": 11111,
+            "size": 2
+        },
+        {
+            "name": "RST 7",
+            "desc": "Restart (38H)",
+            "tstates": 12,
+            "flags": 0,
+            "size": 1
+        }
+    ]
+}
