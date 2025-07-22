@@ -1,0 +1,31 @@
+
+@font-face {
+	font-family: "OCR-A";
+	src: url("../fonts/OCRA.ttf") format("truetype");
+	font-weight: normal;
+	font-style: normal;
+}
+
+body {
+	cursor: default;
+	font-family: "Verdana";
+}
+
+.status {
+	color: #808080;
+}
+
+.action {
+	cursor: pointer;
+}
+
+.sticker {
+	border: 2px solid black;
+	font-family: "OCR-A";
+	text-align: center;
+	width: max-content;
+}
+
+.sticker p, h3 {
+    margin: 0;
+}
