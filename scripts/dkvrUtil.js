@@ -64,6 +64,8 @@ async function connectToDevice(preConnectHandler, postConnectHandler, DOMCallbac
 		onTxCharacteristicValueChanged(evt, DOMCallback);
 		return;
 	});
+	// add a small delay so that the device can warm up
+	await new Promise(r => setTimeout(r, 200));
 	await rxCharacteristic.writeValue(encoder.encode("wakeup\n"));
 	postConnectHandler();
 	return;
