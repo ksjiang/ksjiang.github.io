@@ -1,0 +1,109 @@
+<!--Add date: 08/07/2025-->
+
+<h1>Timing on AVR Microcontrollers</h1>
+
+<h2>Reverse Engineering Tutorial</h2>
+
+<h3>Writeup by YR81</h3>
+
+<h4>Discussion</h4>
+
+<p>In <a href = "#arduino_analog">another post</a>, we analyzed the default use of timers on the ATMega328P by Arduino for pulse width modulation (PWM) signal generation. We saw that all three timers are configured with a clock prescalar of 64, making the counter update frequency equal to <code>16 MHz / 64 = 250 kHz</code>, or a period of <code>4 us</code>. However, whereas <code>Timer0</code> is configured to fast PWM mode, where the counter counts up from 0 to 255, then starts counting up again from 0, <code>Timer1</code> and <code>Timer2</code> are configured to <i>phase-correct PWM</i> mode, where the counter counts up from 0 to 255, but instead of "jumping" back to 0 after reaching the top, it counts down from 255 back to 0 (note that the top value 255 is only counted once). So, while the "frequency" of <code>Timer0</code> is <code>250 kHz / 256 ~ 977 Hz</code>, those of <code>Timer1</code> and <code>Timer2</code> are both <code>250 kHz / 510 ~ 490 Hz</code> (the reason why the number of ticks in a period is <code>510</code> rather than <code>512</code> is explained in the earlier post).</p>
+
+<p>We might wonder why <code>Timer0</code> is not configured with the same waveform generation mode as the other timers. According to the ATMega328P datasheet, phase-correct PWM mode is indeed available to <code>Timer0</code>. One explanation is that some hardware devices may require PWM frequencies higher than <code>~500 Hz</code>. It turns out that there is a more important reason, which is to <i>keep time</i>.</p>
+
+<p>To motivate this discussion, consider two common ways to write a loop that toggles the LED are shown below.</p>
+
+<pre class = 'c'>
+
+uint8_t state;
+uint32_t time;
+void setup() {
+    pinMode(13, OUTPUT);
+
+    time = micros();
+    state = 0;
+    digitalWrite(13, state);
+    return;
+}
+
+void loop() {
+    if (micros() - time >= 500000L) {
+        time = micros();
+        state = 1 - state;
+        digitalWrite(13, state);
+    }
+
+}
+</pre>
+
+<pre class = 'c'>
+
+uint8_t state;
+void setup() {
+    pinMode(13, OUTPUT);
+
+    state = 0;
+    return;
+}
+
+void loop() {
+    digitalWrite(13, state);
+    state = 1 - state;
+    delay(500);
+}
+</pre>
+
+<p>The compiled ELF files for both programs can be found below.</p>
+
+<p>In both cases, on-board LED toggles on and off, with each switch happening at <code>500 ms</code> intervals. In the first case, the controller <i>polls</i> the current elapsed time since the beginning of the program using <code>micros()</code>, and if it has been more than <code>500 ms</code>, the LED is toggled. In the second case, the <i>blocking</i> call <code>delay()</code> is used to add the delay.</p>
+
+<p>But how does the controller "know" how much time has elapsed? There is no real-time clock (RTC) on the Arduino, and besides, RTCs are not usually designed with sub-millisecond precision. Arduino achieves this functionality using <code>Timer0</code>.</p>
+
+<p>Let's begin our analysis with the first program, which uses <code>micros()</code>. The most obvious place to look first is the <code>micros()</code> function itself, which is shown below.</p>
+
+<img class = "small" src = "./images/arduino_timing_1.png"/>
+
+<p class = "caption">Figure 1. <code>micros()</code> function</p>
+
+<p>The function does some simple setup by saving the status register and disabling interrupts. Then, four bytes are loaded from memory into <code>r27:r24</code>. A fifth byte is loaded from the <code>TCNT0</code> hardware register into <code>r18</code>; <code>TCNT0</code> is the 8-bit counter used with <code>Timer0</code>. The overflow flag in the <code>Timer0</code> interrupt register is checked. If it is cleared (meaning no overflow has occurred), execution continues normally. However, if it is set, another check is performed where <code>TCNT0</code> is compared with the <code>TOP</code> value of 255. If equal, this means that the overflow just happened, so nothing special needs to be done. If not equal, this means that the <code>Timer0</code> overflow interrupt handler has not registered the overflow, so 1 is added to the 32-bit value in <code>r27:r24</code>. This means that <code>r27:r24</code> holds the <i>number of (processed) overflows</i> of <code>Timer0</code> since the beginning of the timer's operation.
+    
+<p>Following this check, the status register is restored, and the value in <code>r27:r24</code> is shifted left by 8 bits (by register moves and clearing of <code>r24</code>), and then <code>r18</code> is added. Now, <code>r27:r24</code> holds the number of <i>clock ticks</i> of <code>Timer0</code> since the beginning of operation. We observed earlier that the duration of <code>Timer0</code> ticks is <code>4 us</code>, so to get the microsecond count, the value is finally left shifted by 2 before being returned.</p>
+
+<p>Indeed, if we cross-reference the memory location that <code>r27:r24</code> are initialized from, we find that it is modified by the <code>TIMER0_OVF()</code> interrupt handler. This handler is called each time <code>Timer0</code> reaches its <code>TOP</code> value (255). At the bottom of the function, we find that the overflow counter is simply incremented, as expected.</p>
+
+<img class = "small" src = "./images/arduino_timing_2.png"/>
+
+<p class = "caption">Figure 2. Bottom part of <code>TIMER0_OVF()</code> interrupt service routine.</p>
+
+<p>However, if we look earlier in the function, we find that another region of memory is updated by some additional logic:</p>
+
+<img class = "small" src = "./images/arduino_timing_3.png"/>
+
+<p class = "caption">Figure 3. Top part of <code>TIMER0_OVF()</code> interrupt service routine.</p>
+
+<p>What is going on here? As I have indicated in the disassembly, this memory is a counter of <i>elapsed milliseconds</i>, which is used by the <code>millis()</code> function. To understand the additional logic, consider that <code>Timer0</code> overflow occurs at a regular interval of <code>256 * 4 us = 1024 us</code>, which is just over <code>1 ms</code>. So, the milliseconds counter is incremented at least 1 on each iteration. However, we must not forget about the additional <code>24 us</code> (if we simply dropped it, then our timer would be undermeasuring elapsed time by <code>2.4%</code>!). The way this is addressed is by keeping an additional number in memory that is increased on each overflow to reflect the discrepancy. When the discrepancy exceeds <code>1 ms</code>, then we simply add a "leap" millisecond to the main counter. As a first try, we might think about directly keeping a count of excess microseconds. In this approach, each overflow adds <code>24</code> to the remainder, and when the remainder exceeds <code>1000</code>, we add a leap millisecond. However, this would require 2 bytes of memory. Instead, because <code>24</code> and <code>1000</code> are both divisible by 8, and <code>1000 / 8 = 125</code>, we really only need one byte. This byte is incremented by <code>24 / 8 = 3</code> on each <code>Timer0</code> overflow, and when the value exceeds <code>125 = 0x7d</code>, the byte is decreased by <code>125</code>, and the leap millisecond is added. Note that the way to subtract <code>125</code> is to <i>add</i> the two's complement <code>0x83</code>. The reason that <code>0x86</code> is actually added in the compiled code is that we must remember to still increment by <code>3</code>: subtracting <code>125</code> then adding <code>3</code> is the same as subtracting <code>122</code>.</p>
+
+<p>In summary, the <code>Timer0</code> overflow interrupt handler updates two 32-bit counters (and 1 8-bit "remainder" counter) in memory. These values can be read to get precise elapsed time. By using the values in combination with <code>TCNT0</code>, <code>micros()</code> is accurate down to the clock tick interval of <code>4 us</code>. On the other hand, <code>millis()</code> only counts milliseconds and does not keep track of <code>TCNT0</code>. As such, its accuracy is limited to the duration of one complete overflow cycle, which is <code>1024 us</code> as discussed previously.</p>
+
+<p>Now that we've seen how elapsed time is measured by the microcontroller, let's take a look at how the blocking <code>delay()</code> function is compiled.</p>
+
+<img class = "small" src = "./images/arduino_timing_4.png"/>
+
+<p class = "caption">Figure 4. Implementation of <code>delay()</code>.</p>
+
+<p>I have hidden the code that does <code>digitalWrite()</code> because it got inlined and is not critical to the discussion. We can see that the code ultimately does the same as what we achieved using <code>micros()</code>. There is (1) an internal variable <code>r7:r4</code> that is initialized to the <code>micros()</code> timestamp and (2) an internal counter <code>r15:r12</code> that is initialized to <code>500</code> before the loops are entered: note that this is the number of milliseconds for the delay. We then enter two nested loops. The inner loop repeatedly calls <code>micros()</code> and checks whether the result is at least <code>1000</code> more than the internal variable in <code>r7:r4</code>, very similar to our previous example that does not use <code>delay()</code>. If so, it means that at least one millisecond has passed. Once this happens, the internal counter is decremented in the outer loop, and the internal variable is updated by <code>1000</code>, thus setting a new target for the inner loop. The counter is then compared to <code>0</code>, and if it is not equal, then we once again enter the inner loop. In this way, when the outer loop exits, we will have delayed for 500 milliseconds, as desired.</p>
+
+<p>The implementation of <code>delay()</code> is a bit different than our example because of the use of two loops rather than a single one. I suspect that this is because of the way the function is conceptualized: the argument to <code>delay()</code> <a href = "https://docs.arduino.cc/language-reference/en/functions/time/delay" target = "_blank">should be an integer number of milliseconds</a>, so it is likely written as a simple <code>for</code> loop, where each iteration simply delays a millisecond.</p>
+    
+<p>The <code>delay()</code> function is robust to interrupts: an interrupt handler that takes a significant amount of time before returning will cause the inner loop of <code>delay()</code> to rapidly exit and transfer control to the outer loop, where the internal variable <code>r7:r4</code> target will be quickly increased to "catch up" to the current timestamp. However, importantly, because the delay loop is localized with <code>delay()</code>, the controller can do nothing but stall (and service interrupts). On the other hand, in the example using <code>micros()</code> directly, the controller can perform other tasks if we include them in <code>loop()</code>.</p>
+    
+<p>If the desired functionality is to perform a short periodic task, the best option is really to do away with timing functions altogether and write an interrupt handler. The only disadvantages of using interrupts is that it will generally take more effort (which may not be necessary for very simple delays), and it requires dedicated use of a timer (of which the ATMega328P has only three). The advantages are plenty: the main parts of the code are now free to perform whatever computations are necessary without any fear of incorrect timing, we do not need to keep track of time, and the precision of the executed periodic events is better (since we are not polling).</p>
+
+<p>However, care must be taken when writing interrupt handlers when it is desired to <i>also</i> use functions like <code>micros()</code>, <code>millis()</code>, and <code>delay()</code>. Obviously, <code>Timer0</code> settings should not be modified. In other words, it means that if we want to use <code>Timer0</code>, we have to make do with the <code>250 kHz</code> increment interval and 8-bit counter set to fast PWM mode, and be sure not to modify the <code>TIMER0_OVF</code> handler. Of course, we can also just use <code>Timer1</code> and <code>Timer2</code> instead. Furthermore, because interrupts are disabled by default when entering an interrupt handler, we cannot use <code>delay()</code>. As we have seen above, this is because <code>delay()</code> relies on updates to the microsecond counter that occur on each <code>Timer0</code> overflow interrupt. Note that there is no problem with using <code>micros()</code> inside of an interrupt handler, but the returned value will not be changed over the course of the handler (so we could not, for example, call <code>micros()</code> at the beginning and end of the handler to measure how long the handler takes). (Technically, nested interrupts <i>can</i> be enabled by setting the <code>I</code> bit in the <code>SREG</code> register, but this can potentially make debugging difficult.) Finally, we must make sure that the <code>Timer0</code> overflow handler has a chance to run regularly. If we write interrupt handlers that consume so much time that <code>TIMER0_OVF</code> is prevented from running, then elapsed time cannot be accurately measured.</p>
+
+<h4>Attachments</h4>
+
+<p><a href = "challenges/sketch_aug7a.ino.elf">Blink using <code>micros()</code></a></p>
+
+<p><a href = "challenges/sketch_aug7b.ino.elf">Blink using <code>delay()</code></a></p>

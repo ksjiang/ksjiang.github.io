@@ -95,6 +95,7 @@ unctf_easyvm.html
 arm_rev.html
 arduino_random.html
 arduino_analog.html
+arduino_timing.html
 tios_random.html
 tut_chinese_remainder_thm.html
 stdlib_random.html
@@ -110,19 +111,19 @@ os2021_spn.html
 ; PHYSICS
 
 ; Unsorted
-physics.html
-phys_laplacemc.html
+;physics.html
+;phys_laplacemc.html
 
 
 ; MISCELLANEOUS
 
 ; Unsorted
-dream_speedrun.html
+;dream_speedrun.html
 v8_adaptorframe.html
-topology.html
+;topology.html
 
 
 ; HOSTED CHALLENGES
 
 ; Unsorted
-chall_einherjar.html
+;chall_einherjar.html
