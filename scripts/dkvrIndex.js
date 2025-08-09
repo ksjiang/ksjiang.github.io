@@ -28,10 +28,6 @@ function setStatus(text) {
 	return;
 }
 
-function getStatus() {
-	return document.getElementById("status").innerHTML;
-}
-
 function actionAwaitTransmit() {
 	setStatus("Remote connected!");
 	toggleDisplay("bleConnect", false);
@@ -40,16 +36,18 @@ function actionAwaitTransmit() {
 }
 
 function actionAwaitConnect() {
-	setStatus("Please connect to Bluetooth remote.");
+	setStatus("Please pair a Bluetooth remote.");
 	toggleDisplay("bleConnect", true);
 	toggleDisplay("tx318", false);
+	// we need to add this because this function is also used as a callback
+	// for device disconnect
 	toggleSticker(false);
 	return;
 }
 
 function actionAwaitPrevConnection() {
-	setStatus("Found saved devices - attempting to connect");
-	toggleDisplay("bleConnect", false);
+	setStatus("Attempting to connect to saved remotes. Only select \"Pair\" if connecting to a NEW remote.");
+	toggleDisplay("bleConnect", true);
 	toggleDisplay("tx318", false);
 	return;
 }
@@ -62,9 +60,13 @@ function actionConnecting() {
 }
 
 function errBLENotAvail() {
-	setStatus("Web-BLE is not available! Switch to a different browser.");
+	setStatus("Web BLE is not available! Please switch to a different browser.");
 	toggleDisplay("bleConnect", false);
 	toggleDisplay("tx318", false);
+	// don't forget to toggle these off so we don't have a silly-looking
+	// button when BLE is not available in the first place
+	toggleDisplay("clearWarning", false);
+	toggleDisplay("clearSaved", false);
 	return;
 }
 
@@ -99,7 +101,8 @@ document.addEventListener("DOMContentLoaded", function () {
 	if (isWebBLEAvail()) {
 		if (isGetDevicesAvail()) {
 			toggleDisplay("clearSaved", true);
-			// we will first try to see if any DKVR devices have been remembered, so that the user does not have to manually connect every time
+			// we will first try to see if any DKVR devices have been paired previously
+			// so that the user does not have to manually connect every time
 			navigator.bluetooth.getDevices().then(function (deviceList) {
 				let mbDeviceList;
 
@@ -118,12 +121,7 @@ document.addEventListener("DOMContentLoaded", function () {
 						}, abortController);
 					}
 
-					// if it takes too long to receive an advertisement, allow manual connection
-					setTimeout(function() {
-						if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleDisplay("bleConnect", true);
-						return;
-					}, 5000);
-				} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to connect
+				} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to pair
 				return;
 			});
 		} else {
