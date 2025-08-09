@@ -1,5 +1,5 @@
 
-function toggleButton(name, show) {
+function toggleDisplay(name, show) {
 	if (show) document.getElementById(name).style.display = "";
 	else document.getElementById(name).style.display = "none";
 	return;
@@ -34,37 +34,37 @@ function getStatus() {
 
 function actionAwaitTransmit() {
 	setStatus("Remote connected!");
-	toggleButton("bleConnect", false);
+	toggleDisplay("bleConnect", false);
 	// we don't toggle the state of the transmit button here; wait until serial number is populated
 	return;
 }
 
 function actionAwaitConnect() {
 	setStatus("Please connect to Bluetooth remote.");
-	toggleButton("bleConnect", true);
-	toggleButton("tx318", false);
+	toggleDisplay("bleConnect", true);
+	toggleDisplay("tx318", false);
 	toggleSticker(false);
 	return;
 }
 
 function actionAwaitPrevConnection() {
 	setStatus("Found saved devices - attempting to connect");
-	toggleButton("bleConnect", false);
-	toggleButton("tx318", false);
+	toggleDisplay("bleConnect", false);
+	toggleDisplay("tx318", false);
 	return;
 }
 
 function actionConnecting() {
 	setStatus("Connecting...");
-	toggleButton("bleConnect", false);
-	toggleButton("tx318", false);
+	toggleDisplay("bleConnect", false);
+	toggleDisplay("tx318", false);
 	return;
 }
 
 function errBLENotAvail() {
 	setStatus("Web-BLE is not available! Switch to a different browser.");
-	toggleButton("bleConnect", false);
-	toggleButton("tx318", false);
+	toggleDisplay("bleConnect", false);
+	toggleDisplay("tx318", false);
 	return;
 }
 
@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		userRequestDevice().then(function (device) {
 			connectToDevice(device, actionConnecting, function () {
 				toggleSticker(true);
-				toggleButton("tx318", true);
+				toggleDisplay("tx318", true);
 				return;
 			}, actionAwaitConnect);
 			return;
@@ -94,10 +94,11 @@ document.addEventListener("DOMContentLoaded", function () {
 	});
 	// initialize button and label state
 	toggleSticker(false);
-	toggleButton("bleConnect", false);
-	toggleButton("tx318", false);
+	toggleDisplay("bleConnect", false);
+	toggleDisplay("tx318", false);
 	if (isWebBLEAvail()) {
 		if (isGetDevicesAvail()) {
+			toggleDisplay("clearSaved", true);
 			// we will first try to see if any DKVR devices have been remembered, so that the user does not have to manually connect every time
 			navigator.bluetooth.getDevices().then(function (deviceList) {
 				let mbDeviceList;
@@ -111,7 +112,7 @@ document.addEventListener("DOMContentLoaded", function () {
 						watchAdvertisements(mbDevice, function (device) {
 							connectToDevice(device, actionConnecting, function () {
 								toggleSticker(true);
-								toggleButton("tx318", true);
+								toggleDisplay("tx318", true);
 								return;
 							}, actionAwaitConnect).then(actionAwaitTransmit);
 						}, abortController);
@@ -119,13 +120,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
 					// if it takes too long to receive an advertisement, allow manual connection
 					setTimeout(function() {
-						if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleButton("bleConnect", true);
+						if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleDisplay("bleConnect", true);
 						return;
 					}, 5000);
 				} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to connect
 				return;
 			});
-		} else actionAwaitConnect();				//if getDevices() is not available, fallback to manual connection
+		} else {
+			// if getDevices() is not available, fallback to manual connection
+			// we also do not need to show the remove devices button
+			toggleDisplay("clearWarning", false);
+			toggleDisplay("clearSaved", false);
+			actionAwaitConnect();
+		}
 	} else errBLENotAvail();
 	return;
 });
