@@ -38,6 +38,10 @@ function isWebBLEAvail() {
 	return !!navigator.bluetooth;
 }
 
+function isGetDevicesAvail() {
+	return !!navigator.bluetooth.getDevices;
+}
+
 function filterDevicesListMB(devList) {
 	return devList.filter(function (device) {
 		return device.name.startsWith("BBC micro:bit");

@@ -97,33 +97,35 @@ document.addEventListener("DOMContentLoaded", function () {
 	toggleButton("bleConnect", false);
 	toggleButton("tx318", false);
 	if (isWebBLEAvail()) {
-		// we will first try to see if any DKVR devices have been remembered, so that the user does not have to manually connect every time
-		navigator.bluetooth.getDevices().then(function (deviceList) {
-			let mbDeviceList;
+		if (isGetDevicesAvail()) {
+			// we will first try to see if any DKVR devices have been remembered, so that the user does not have to manually connect every time
+			navigator.bluetooth.getDevices().then(function (deviceList) {
+				let mbDeviceList;
 
-			mbDeviceList = filterDevicesListMB(deviceList);
-			if (mbDeviceList.length > 0) {
-				const abortController = new AbortController();
+				mbDeviceList = filterDevicesListMB(deviceList);
+				if (mbDeviceList.length > 0) {
+					const abortController = new AbortController();
 
-				actionAwaitPrevConnection();
-				for (const mbDevice of mbDeviceList) {
-					watchAdvertisements(mbDevice, function (device) {
-						connectToDevice(device, actionConnecting, function () {
-							toggleSticker(true);
-							toggleButton("tx318", true);
-							return;
-						}, actionAwaitConnect).then(actionAwaitTransmit);
-					}, abortController);
-				}
+					actionAwaitPrevConnection();
+					for (const mbDevice of mbDeviceList) {
+						watchAdvertisements(mbDevice, function (device) {
+							connectToDevice(device, actionConnecting, function () {
+								toggleSticker(true);
+								toggleButton("tx318", true);
+								return;
+							}, actionAwaitConnect).then(actionAwaitTransmit);
+						}, abortController);
+					}
 
-				// if it takes too long to receive an advertisement, allow manual connection
-				setTimeout(function() {
-					if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleButton("bleConnect", true);
-					return;
-				}, 5000);
-			} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to connect
-			return;
-		});
+					// if it takes too long to receive an advertisement, allow manual connection
+					setTimeout(function() {
+						if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleButton("bleConnect", true);
+						return;
+					}, 5000);
+				} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to connect
+				return;
+			});
+		} else actionAwaitConnect();				//if getDevices() is not available, fallback to manual connection
 	} else errBLENotAvail();
 	return;
 });
