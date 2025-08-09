@@ -1,53 +1,129 @@
 
+function toggleButton(name, show) {
+	if (show) document.getElementById(name).style.display = "";
+	else document.getElementById(name).style.display = "none";
+	return;
+}
+
+function toggleSticker(active) {
+	if (active) {
+		document.getElementById("serialLbl").innerHTML = `${(getSerial() >>> 16).toString().padStart(4, '0')}&nbsp;${(getSerial() & 0xffff).toString().padStart(5, '0')}`;
+		document.getElementById("serialLbl").style.fontWeight = "bold";
+		document.getElementById("serialLbl").style.color = "#9834e0";
+		stickerActive = true;
+	} else {
+		// if the sticker is toggled off, clear SER and KEY
+		resetSerialAndKey();
+		document.getElementById("serialLbl").innerHTML = "XXXX&nbsp;XXXXX";
+		document.getElementById("serialLbl").style.fontWeight = "";
+		document.getElementById("serialLbl").style.color = "";
+		stickerActive = false;
+	}
+
+	return;
+}
+
+function setStatus(text) {
+	document.getElementById("status").innerHTML = text;
+	return;
+}
+
+function getStatus() {
+	return document.getElementById("status").innerHTML;
+}
+
 function actionAwaitTransmit() {
-	document.getElementById("status").innerHTML = "Remote connected!";
-	document.getElementById("bleConnect").style.display = "none";
-	document.getElementById("tx318").style.display = "";
+	setStatus("Remote connected!");
+	toggleButton("bleConnect", false);
+	// we don't toggle the state of the transmit button here; wait until serial number is populated
 	return;
 }
 
 function actionAwaitConnect() {
-	document.getElementById("status").innerHTML = "Please connect to Bluetooth remote.";
-	document.getElementById("bleConnect").style.display = "";
-	document.getElementById("tx318").style.display = "none";
-	document.getElementById("serialLbl").innerHTML = "XXXX&nbsp;XXXXX";
-	document.getElementById("serialLbl").style.fontWeight = "";
-	document.getElementById("serialLbl").style.color = "";
+	setStatus("Please connect to Bluetooth remote.");
+	toggleButton("bleConnect", true);
+	toggleButton("tx318", false);
+	toggleSticker(false);
+	return;
+}
+
+function actionAwaitPrevConnection() {
+	setStatus("Found saved devices - attempting to connect");
+	toggleButton("bleConnect", false);
+	toggleButton("tx318", false);
 	return;
 }
 
 function actionConnecting() {
-	document.getElementById("status").innerHTML = "Connecting...";
-	document.getElementById("bleConnect").style.display = "";
-	document.getElementById("tx318").style.display = "none";
+	setStatus("Connecting...");
+	toggleButton("bleConnect", false);
+	toggleButton("tx318", false);
 	return;
 }
 
 function errBLENotAvail() {
-	document.getElementById("status").innerHTML = "Web-BLE is not available! Switch to a different browser.";
-	document.getElementById("bleConnect").style.display = "none";
-	document.getElementById("tx318").style.display = "none";
-	return;
-}
-
-function updateSticker() {
-	document.getElementById("serialLbl").innerHTML = `${(SER >>> 16).toString().padStart(4, '0')}&nbsp;${(SER & 0xffff).toString().padStart(5, '0')}`;
-	document.getElementById("serialLbl").style.fontWeight = "bold";
-	document.getElementById("serialLbl").style.color = "#9834e0";
+	setStatus("Web-BLE is not available! Switch to a different browser.");
+	toggleButton("bleConnect", false);
+	toggleButton("tx318", false);
 	return;
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+	// attach handlers to buttons
 	document.getElementById("bleConnect").addEventListener("click", function () {
-		connectToDevice(actionConnecting, requestSerialAndKey, updateSticker, actionAwaitConnect).then(actionAwaitTransmit);
+		userRequestDevice().then(function (device) {
+			connectToDevice(device, actionConnecting, function () {
+				toggleSticker(true);
+				toggleButton("tx318", true);
+				return;
+			}, actionAwaitConnect);
+			return;
+		}).then(actionAwaitTransmit);
 		return;
 	});
-	document.getElementById("bleConnect").style.display = "none";
 	document.getElementById("tx318").addEventListener("click", transmitCode);
-	document.getElementById("tx318").style.display = "none";
-	document.getElementById("serialLbl").innerHTML = "XXXX&nbsp;XXXXX";
-	document.getElementById("serialLbl").style.fontWeight = "";
-	document.getElementById("serialLbl").style.color = "";
-	if (isWebBLEAvail()) actionAwaitConnect(); else errBLENotAvail();
+	document.getElementById("clearSaved").addEventListener("click", function () {
+		// "forget" all saved devices
+		navigator.bluetooth.getDevices().then(function (deviceList) {
+			let mbDeviceList;
+
+			mbDeviceList = filterDevicesListMB(deviceList);
+			for (const mbDevice of mbDeviceList) mbDevice.forget();
+		});
+		return;
+	});
+	// initialize button and label state
+	toggleSticker(false);
+	toggleButton("bleConnect", false);
+	toggleButton("tx318", false);
+	if (isWebBLEAvail()) {
+		// we will first try to see if any DKVR devices have been remembered, so that the user does not have to manually connect every time
+		navigator.bluetooth.getDevices().then(function (deviceList) {
+			let mbDeviceList;
+
+			mbDeviceList = filterDevicesListMB(deviceList);
+			if (mbDeviceList.length > 0) {
+				const abortController = new AbortController();
+
+				actionAwaitPrevConnection();
+				for (const mbDevice of mbDeviceList) {
+					watchAdvertisements(mbDevice, function (device) {
+						connectToDevice(device, actionConnecting, function () {
+							toggleSticker(true);
+							toggleButton("tx318", true);
+							return;
+						}, actionAwaitConnect).then(actionAwaitTransmit);
+					}, abortController);
+				}
+
+				// if it takes too long to receive an advertisement, allow manual connection
+				setTimeout(function() {
+					if (!(getStatus() === "Connecting..." || getStatus() === "Remote connected!")) toggleButton("bleConnect", true);
+					return;
+				}, 5000);
+			} else actionAwaitConnect();		//if we cannot connect to previous DKVR devices, ask the user to connect
+			return;
+		});
+	} else errBLENotAvail();
 	return;
 });

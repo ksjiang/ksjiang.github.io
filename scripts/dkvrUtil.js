@@ -20,9 +20,38 @@ const UART_RX_CHARACTERISTICS_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 const UART_TX_CHARACTERISTICS_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 let rxCharacteristic, txCharacteristic;
 let encoder = new TextEncoder();
+let SER, K_H, K_L;
+
+// Resets the state of the encryption
+function resetSerialAndKey() {
+	SER = undefined;
+	K_H = undefined;
+	K_L = undefined;
+	return;
+}
+
+function getSerial() {
+	return SER;
+}
 
 function isWebBLEAvail() {
 	return !!navigator.bluetooth;
+}
+
+function filterDevicesListMB(devList) {
+	return devList.filter(function (device) {
+		return device.name.startsWith("BBC micro:bit");
+	});
+}
+
+async function watchAdvertisements(dev, connectHandler, abortController) {
+	dev.addEventListener("advertisementreceived", function () {
+		abortController.abort();
+		connectHandler(dev);
+		return;
+	});
+	dev.watchAdvertisements({signal: abortController.signal});
+	return;
 }
 
 function onTxCharacteristicValueChanged(event, DOMCallback) {
@@ -46,13 +75,17 @@ function onTxCharacteristicValueChanged(event, DOMCallback) {
 	return;
 }
 
-async function connectToDevice(preConnectHandler, postConnectHandler, DOMCallback, disconnectHandler) {
+async function userRequestDevice() {
 	let dev;
 
 	dev = await navigator.bluetooth.requestDevice({
 		filters: [{namePrefix: "BBC micro:bit"}], 
 		optionalServices: [UART_SERVICE_UUID]
 	});
+	return dev;
+}
+
+async function connectToDevice(dev, preConnectHandler, DOMCallback, disconnectHandler) {
 	preConnectHandler();
 	dev.addEventListener("gattserverdisconnected", disconnectHandler);
 	const server = await dev.gatt.connect();
@@ -65,9 +98,11 @@ async function connectToDevice(preConnectHandler, postConnectHandler, DOMCallbac
 		return;
 	});
 	// add a small delay so that the device can warm up
-	await new Promise(r => setTimeout(r, 200));
+	await new Promise(function(r) {
+		setTimeout(r, 200);
+	});
 	await rxCharacteristic.writeValue(encoder.encode("wakeup\n"));
-	postConnectHandler();
+	requestSerialAndKey();
 	return;
 }
 
@@ -99,65 +134,7 @@ function transmitCode() {
 	return;
 }
 
-
-/*
-Keeloq encryption utilities
-*/
-
-function uint32(x) {
-	return x >>> 0;
-}
-
-// Keeloq encryption constants
-const ROUNDS = 528;
-const NLF = 0x3a5c742e;
-
-let SER, K_H, K_L;
-
-/* Gets a bit at a particular position */
-function getBit(x, pos) {
-	return (x >>> pos) & 1;
-}
-
-/* Compute the Keeloq FSR non-linear function */
-function klqNLF(a, b, c, d, e) {
-	return getBit(
-		NLF, 
-		(a << 4) | (b << 3) | (c << 2) | (d << 1) | e
-		);
-}
-
-/* Perform Keeloq encryption on a 32-bit block */
-function klqEncryptBlk(plaintext, key_h, key_l) {
-	let step, keybit, newbit, rd, ciphertext;
-
-	ciphertext = plaintext;
-	for (rd = 0; rd < ROUNDS; rd++) {
-		step = rd % 64;
-		if (step < 32) keybit = getBit(key_l, step);
-		else keybit = getBit(key_h, step - 32);
-		newbit = klqNLF(
-		getBit(ciphertext, 31), 
-		getBit(ciphertext, 26), 
-		getBit(ciphertext, 20), 
-		getBit(ciphertext, 9), 
-		getBit(ciphertext, 1)
-		) ^ keybit ^ getBit(ciphertext, 16) ^ getBit(ciphertext, 0);
-		ciphertext = uint32(uint32(newbit << 31) | (ciphertext >>> 1));
-	}
-
-	return ciphertext;
-}
-
-function klqEncryptDKCtr(ctr, key_h, key_l) {
-	let plaintext, ciphertext;
-
-	ctr = ctr & 0xffff;
-	plaintext = uint32(uint32(0x2230 << 16) | ctr);
-	ciphertext = klqEncryptBlk(plaintext, key_h, key_l);
-	return ciphertext;
-}
-
+// compute HCS301-compatible keystream
 function computeBitStream(serial, hopping) {
 	let i, j, curByte, bitStream, byteStream, cappedSerial;
 
@@ -202,4 +179,62 @@ function computeBitStream(serial, hopping) {
 	}
 
 	return byteStream;
+}
+
+
+/*
+Keeloq encryption utilities
+*/
+
+// Convert an integer to unsigned integer
+function uint32(x) {
+	return x >>> 0;
+}
+
+// Keeloq encryption constants
+const ROUNDS = 528;
+const NLF = 0x3a5c742e;
+
+// Gets a bit at a particular position
+function getBit(x, pos) {
+	return (x >>> pos) & 1;
+}
+
+// Compute the Keeloq FSR non-linear function
+function klqNLF(a, b, c, d, e) {
+	return getBit(
+		NLF, 
+		(a << 4) | (b << 3) | (c << 2) | (d << 1) | e
+		);
+}
+
+// Perform Keeloq encryption on a 32-bit block
+function klqEncryptBlk(plaintext, key_h, key_l) {
+	let step, keybit, newbit, rd, ciphertext;
+
+	ciphertext = plaintext;
+	for (rd = 0; rd < ROUNDS; rd++) {
+		step = rd % 64;
+		if (step < 32) keybit = getBit(key_l, step);
+		else keybit = getBit(key_h, step - 32);
+		newbit = klqNLF(
+		getBit(ciphertext, 31), 
+		getBit(ciphertext, 26), 
+		getBit(ciphertext, 20), 
+		getBit(ciphertext, 9), 
+		getBit(ciphertext, 1)
+		) ^ keybit ^ getBit(ciphertext, 16) ^ getBit(ciphertext, 0);
+		ciphertext = uint32(uint32(newbit << 31) | (ciphertext >>> 1));
+	}
+
+	return ciphertext;
+}
+
+function klqEncryptDKCtr(ctr, key_h, key_l) {
+	let plaintext, ciphertext;
+
+	ctr = ctr & 0xffff;
+	plaintext = uint32(uint32(0x2230 << 16) | ctr);
+	ciphertext = klqEncryptBlk(plaintext, key_h, key_l);
+	return ciphertext;
 }
